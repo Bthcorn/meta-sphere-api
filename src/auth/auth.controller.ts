@@ -15,7 +15,7 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
-import { Public } from 'src/shared/decorator/public.decorator';
+import { Public } from 'src/common/decorator/public.decorator';
 import { LoginDto } from './dto/login.dto';
 
 @ApiTags('auth')
@@ -53,6 +53,22 @@ export class AuthController {
   })
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
+  }
+
+  @Post('logout')
+  @ApiBearerAuth('JWT-auth')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Logout current user' })
+  @ApiResponse({
+    status: 200,
+    description: 'User successfully logged out.',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized.',
+  })
+  async logout(@Request() req) {
+    return this.authService.logout();
   }
 
   @Get('profile')

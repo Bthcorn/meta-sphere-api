@@ -14,10 +14,23 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserStatus {
+  ONLINE
+  OFFLINE
+  AWAY
+  DO_NOT_DISTURB
+}
+
 model User {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  username  String   @unique @db.VarChar(255)
-  password  String   @db.VarChar(255)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  email          String     @unique @db.VarChar(255)
+  username       String     @unique @db.VarChar(255)
+  password       String     @db.VarChar(255)
+  firstName      String     @db.VarChar(255)
+  lastName       String     @db.VarChar(255)
+  profilePicture String?
+  status         UserStatus @default(OFFLINE)
+  lastActive     DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }

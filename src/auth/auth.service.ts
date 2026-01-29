@@ -53,7 +53,14 @@ export class AuthService {
       throw new ConflictException('Username already exists');
     }
 
-    const user = await this.usersService.create(createUserDto);
+    const user = await this.usersService.create({
+      username: createUserDto.username,
+      password: createUserDto.password,
+      email: createUserDto.email,
+      firstName: createUserDto.firstName,
+      lastName: createUserDto.lastName,
+      profilePicture: createUserDto.profilePicture,
+    });
 
     const payload: JwtPayload = {
       sub: user.id.toString(),
@@ -66,6 +73,15 @@ export class AuthService {
         id: user.id,
         username: user.username,
       },
+    };
+  }
+
+  async logout() {
+    // In a JWT-based system, logout is typically handled client-side
+    // by removing the token from storage. This endpoint confirms the logout action.
+    // For token blacklisting, you would add the token to a blacklist here.
+    return {
+      message: 'Logout successful',
     };
   }
 }
