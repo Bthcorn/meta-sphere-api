@@ -9,7 +9,6 @@ import {
   HttpCode,
   HttpStatus,
   ConflictException,
-  Request,
   NotFoundException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
@@ -23,6 +22,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { CurrentUser } from 'src/auth/decorator/current-user.decorator';
+import type { JwtUser } from 'src/auth/interfaces/jwt-user.interface';
 
 @ApiTags('users')
 @ApiBearerAuth('JWT-auth')
@@ -34,12 +35,16 @@ export class UsersController {
   @ApiOperation({ summary: 'Get current user profile' })
   @ApiResponse({ status: 200, description: 'Current user profile returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async getCurrentUser(@Request() req) {
-    const user = await this.usersService.findById(req.user.userId);
-    if (!user) {
+  async getCurrentUser(@CurrentUser() user: JwtUser) {
+    const userFound = await this.usersService.findById(user.userId);
+
+    if (!userFound) {
       throw new NotFoundException('User not found');
     }
-    const { password, ...result } = user;
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { password, ...result } = userFound;
+
     return result;
   }
 
@@ -51,14 +56,17 @@ export class UsersController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async updateCurrentUser(
-    @Request() req,
+    @CurrentUser() jwtUser: JwtUser,
     @Body() updateUserDto: UpdateUserDto,
   ) {
     const user = await this.usersService.updateUser(
-      req.user.userId,
+      jwtUser.userId,
       updateUserDto,
     );
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
+
     return result;
   }
 
@@ -66,12 +74,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Update current user avatar' })
   @ApiResponse({ status: 200, description: 'Avatar successfully updated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async updateAvatar(@Request() req, @Body() updateAvatarDto: UpdateAvatarDto) {
+  async updateAvatar(
+    @CurrentUser() jwtUser: JwtUser,
+    @Body() updateAvatarDto: UpdateAvatarDto,
+  ) {
     const user = await this.usersService.updateAvatar(
-      req.user.userId,
+      jwtUser.userId,
       updateAvatarDto.avatarUrl,
     );
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
+
     return result;
   }
 
@@ -79,12 +93,18 @@ export class UsersController {
   @ApiOperation({ summary: 'Update current user status' })
   @ApiResponse({ status: 200, description: 'Status successfully updated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async updateStatus(@Request() req, @Body() updateStatusDto: UpdateStatusDto) {
+  async updateStatus(
+    @CurrentUser() jwtUser: JwtUser,
+    @Body() updateStatusDto: UpdateStatusDto,
+  ) {
     const user = await this.usersService.updateStatus(
-      req.user.userId,
+      jwtUser.userId,
       updateStatusDto.status,
     );
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
+
     return result;
   }
 
@@ -94,7 +114,9 @@ export class UsersController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async getOnlineUsers() {
     const users = await this.usersService.findOnlineUsers();
+
     return users.map((user) => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { password, ...result } = user;
       return result;
     });
@@ -111,7 +133,9 @@ export class UsersController {
       throw new NotFoundException('User not found');
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...result } = user;
+
     return result;
   }
 
