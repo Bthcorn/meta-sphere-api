@@ -12,7 +12,7 @@ module.exports = async function globalSetup() {
     // Start the test database
     console.log('📦 Starting PostgreSQL test container...');
     execSync(
-      'docker-compose -p meta-sphere-test -f docker-compose.test.yml up -d',
+      'docker compose -p meta-sphere-test -f docker-compose.test.yml up -d',
       {
         stdio: 'inherit',
       },

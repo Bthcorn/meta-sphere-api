@@ -7,7 +7,7 @@ module.exports = async function globalTeardown() {
     // Stop and remove the test database
     console.log('🛑 Stopping PostgreSQL test container...');
     execSync(
-      'docker-compose -p meta-sphere-test -f docker-compose.test.yml down -v',
+      'docker compose -p meta-sphere-test -f docker-compose.test.yml down -v',
       {
         stdio: 'inherit',
       },
