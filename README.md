@@ -57,6 +57,8 @@ $ pnpm run test:e2e
 $ pnpm run test:cov
 ```
 
+For detailed information about e2e testing setup, requirements, and best practices, see [E2E-TESTING.md](E2E-TESTING.md).
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
