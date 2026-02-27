@@ -42,7 +42,7 @@ CREATE TYPE "NotificationType" AS ENUM ('FRIEND_REQUEST', 'FRIEND_ACCEPTED', 'RO
 BEGIN;
 CREATE TYPE "UserStatus_new" AS ENUM ('AVAILABLE', 'BUSY', 'AWAY', 'DO_NOT_DISTURB', 'FOCUS');
 ALTER TABLE "public"."User" ALTER COLUMN "status" DROP DEFAULT;
-ALTER TABLE "users" ALTER COLUMN "status" TYPE "UserStatus_new" USING ("status"::text::"UserStatus_new");
+ALTER TABLE "User" ALTER COLUMN "status" TYPE "UserStatus_new" USING ("status"::text::"UserStatus_new");
 ALTER TYPE "UserStatus" RENAME TO "UserStatus_old";
 ALTER TYPE "UserStatus_new" RENAME TO "UserStatus";
 DROP TYPE "public"."UserStatus_old";
@@ -63,6 +63,7 @@ CREATE TABLE "users" (
     "avatarPreset" TEXT NOT NULL DEFAULT 'avatar1',
     "status" "UserStatus" NOT NULL DEFAULT 'AVAILABLE',
     "lastActive" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "role" "UserRole" NOT NULL DEFAULT 'USER',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
