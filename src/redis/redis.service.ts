@@ -13,8 +13,8 @@ export class RedisService extends Redis implements OnModuleDestroy {
     this.on('connect', () => this.logger.log('Redis connected'));
   }
 
-  async onModuleDestroy() {
-    await this.quit();
+  onModuleDestroy() {
+    this.disconnect(false);
   }
 
   // ── Room occupancy helpers (Redis Set per room) ──────────────────────────
