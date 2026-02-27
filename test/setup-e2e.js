@@ -54,6 +54,25 @@ module.exports = async function globalSetup() {
       }
     }
 
+    // Wait for MinIO to be ready
+    console.log('⏳ Waiting for MinIO to be ready...');
+    let minioRetries = 30;
+    while (minioRetries > 0) {
+      try {
+        execSync(
+          'docker exec meta-sphere-test-minio mc ready local',
+          { stdio: 'pipe' },
+        );
+        break;
+      } catch {
+        minioRetries--;
+        if (minioRetries === 0) {
+          throw new Error('MinIO failed to start');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
     // Run database migrations
     console.log('🔄 Running database migrations...');
     execSync('npx prisma migrate deploy', {

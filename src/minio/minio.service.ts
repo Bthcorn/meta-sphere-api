@@ -29,7 +29,11 @@ export class MinioService implements OnModuleInit {
       } else {
         this.logger.log(`Bucket "${this.bucket}" already exists`);
       }
-    } catch (err) {
+    } catch (err: any) {
+      if (err?.code === 'BucketAlreadyOwnedByYou') {
+        this.logger.log(`Bucket "${this.bucket}" already exists`);
+        return;
+      }
       this.logger.error('MinIO init error', err);
     }
   }
