@@ -6,12 +6,7 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import * as dotenv from 'dotenv';
-import * as path from 'path';
 import { App } from 'supertest/types';
-
-// Load test environment variables
-dotenv.config({ path: path.resolve(__dirname, '../.env.test') });
 
 describe('AuthController (e2e)', () => {
   let app: INestApplication<App>;
