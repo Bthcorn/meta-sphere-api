@@ -1,18 +1,13 @@
 import {
   Controller,
-  Post,
-  Body,
   Get,
   Put,
   Patch,
   Param,
-  HttpCode,
-  HttpStatus,
-  ConflictException,
+  Body,
   NotFoundException,
 } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateAvatarDto } from './dto/update-avatar.dto';
 import { UpdateStatusDto } from './dto/update-status.dto';
@@ -32,127 +27,76 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get('me')
-  @ApiOperation({ summary: 'Get current user profile' })
+  @ApiOperation({ summary: 'Get own profile' })
   @ApiResponse({ status: 200, description: 'Current user profile returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async getCurrentUser(@CurrentUser() user: JwtUser) {
-    const userFound = await this.usersService.findById(user.userId);
-
-    if (!userFound) {
-      throw new NotFoundException('User not found');
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = userFound;
-
+  async getMe(@CurrentUser() user: JwtUser) {
+    const found = await this.usersService.findById(user.userId);
+    if (!found) throw new NotFoundException('User not found');
+    const { password: _, ...result } = found;
     return result;
   }
 
   @Put('me')
-  @ApiOperation({ summary: 'Update current user profile' })
-  @ApiResponse({
-    status: 200,
-    description: 'User profile successfully updated.',
-  })
+  @ApiOperation({ summary: 'Update profile (name, email, etc.)' })
+  @ApiResponse({ status: 200, description: 'Profile successfully updated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
-  async updateCurrentUser(
-    @CurrentUser() jwtUser: JwtUser,
-    @Body() updateUserDto: UpdateUserDto,
+  async updateMe(
+    @CurrentUser() user: JwtUser,
+    @Body() dto: UpdateUserDto,
   ) {
-    const user = await this.usersService.updateUser(
-      jwtUser.userId,
-      updateUserDto,
-    );
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = user;
-
+    const updated = await this.usersService.updateUser(user.userId, dto);
+    const { password: _, ...result } = updated;
     return result;
   }
 
   @Patch('me/avatar')
-  @ApiOperation({ summary: 'Update current user avatar' })
-  @ApiResponse({ status: 200, description: 'Avatar successfully updated.' })
+  @ApiOperation({ summary: 'Change avatar preset' })
+  @ApiResponse({ status: 200, description: 'Avatar preset updated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async updateAvatar(
-    @CurrentUser() jwtUser: JwtUser,
-    @Body() updateAvatarDto: UpdateAvatarDto,
+    @CurrentUser() user: JwtUser,
+    @Body() dto: UpdateAvatarDto,
   ) {
-    const user = await this.usersService.updateAvatar(
-      jwtUser.userId,
-      updateAvatarDto.avatarUrl,
+    const updated = await this.usersService.updateAvatar(
+      user.userId,
+      dto.avatarPreset,
     );
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = user;
-
+    const { password: _, ...result } = updated;
     return result;
   }
 
   @Patch('me/status')
-  @ApiOperation({ summary: 'Update current user status' })
-  @ApiResponse({ status: 200, description: 'Status successfully updated.' })
+  @ApiOperation({ summary: 'Set status (AVAILABLE, BUSY, AWAY, DO_NOT_DISTURB, FOCUS)' })
+  @ApiResponse({ status: 200, description: 'Status updated.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async updateStatus(
-    @CurrentUser() jwtUser: JwtUser,
-    @Body() updateStatusDto: UpdateStatusDto,
+    @CurrentUser() user: JwtUser,
+    @Body() dto: UpdateStatusDto,
   ) {
-    const user = await this.usersService.updateStatus(
-      jwtUser.userId,
-      updateStatusDto.status,
-    );
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = user;
-
+    const updated = await this.usersService.updateStatus(user.userId, dto.status);
+    const { password: _, ...result } = updated;
     return result;
   }
 
   @Get('online')
-  @ApiOperation({ summary: 'Get all online users' })
-  @ApiResponse({ status: 200, description: 'List of online users returned.' })
+  @ApiOperation({ summary: 'List currently online users' })
+  @ApiResponse({ status: 200, description: 'Online users returned.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async getOnlineUsers() {
     const users = await this.usersService.findOnlineUsers();
-
-    return users.map((user) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { password, ...result } = user;
-      return result;
-    });
+    return users.map(({ password: _, ...u }) => u);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get user by ID' })
+  @ApiOperation({ summary: "View another user's public profile" })
   @ApiResponse({ status: 200, description: 'User found.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
   async findById(@Param('id') id: string) {
     const user = await this.usersService.findById(id);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password, ...result } = user;
-
+    if (!user) throw new NotFoundException('User not found');
+    const { password: _, ...result } = user;
     return result;
-  }
-
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a new user' })
-  @ApiResponse({ status: 201, description: 'User successfully created.' })
-  @ApiResponse({ status: 409, description: 'Username already exists.' })
-  async create(@Body() createUserDto: CreateUserDto) {
-    const existingUser = await this.usersService.findByUsername({
-      username: createUserDto.username,
-    });
-
-    if (existingUser) {
-      throw new ConflictException('Username already exists');
-    }
-
-    return this.usersService.create(createUserDto);
   }
 }

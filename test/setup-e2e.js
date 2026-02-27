@@ -36,6 +36,43 @@ module.exports = async function globalSetup() {
       }
     }
 
+    // Wait for Redis to be ready
+    console.log('⏳ Waiting for Redis to be ready...');
+    let redisRetries = 30;
+    while (redisRetries > 0) {
+      try {
+        execSync('docker exec meta-sphere-test-redis redis-cli ping', {
+          stdio: 'pipe',
+        });
+        break;
+      } catch {
+        redisRetries--;
+        if (redisRetries === 0) {
+          throw new Error('Redis failed to start');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    // Wait for MinIO to be ready
+    console.log('⏳ Waiting for MinIO to be ready...');
+    let minioRetries = 30;
+    while (minioRetries > 0) {
+      try {
+        execSync(
+          'docker exec meta-sphere-test-minio mc ready local',
+          { stdio: 'pipe' },
+        );
+        break;
+      } catch {
+        minioRetries--;
+        if (minioRetries === 0) {
+          throw new Error('MinIO failed to start');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
     // Run database migrations
     console.log('🔄 Running database migrations...');
     execSync('npx prisma migrate deploy', {
