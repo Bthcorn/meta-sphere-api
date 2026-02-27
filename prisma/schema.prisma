@@ -14,23 +14,402 @@ datasource db {
   provider = "postgresql"
 }
 
-enum UserStatus {
-  ONLINE
-  OFFLINE
-  AWAY
-  DO_NOT_DISTURB
+// ============================================================
+// USER MANAGEMENT
+// ============================================================
+model User {
+  id                     String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  email                  String               @unique @db.VarChar(255)
+  username               String               @unique @db.VarChar(255)
+  password               String
+  firstName              String               @db.VarChar(255)
+  lastName               String               @db.VarChar(255)
+  profilePicture         String?
+  avatarPreset           String               @default("avatar1")
+  role                   UserRole             @default(USER)
+  status                 UserStatus           @default(AVAILABLE)
+  lastActive             DateTime             @default(now())
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+  rooms                  Room[]
+  messages               Message[]
+  files                  File[]
+  sentMessages           Message[]            @relation("MessageSender")
+  receivedMessages       Message[]            @relation("MessageRecipient")
+  friendships            Friendship[]
+  sentFriendRequests     Friendship[]         @relation("FriendRequester")
+  receivedFriendRequests Friendship[]         @relation("FriendAddressee")
+  notifications          Notification[]
+  createdRooms           Room[]               @relation("RoomCreator")
+  hostedSessions         Session[]            @relation("SessionHost")
+  sessionParticipations  SessionParticipant[]
+
+  @@map("users")
 }
 
-model User {
-  id             String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
-  email          String     @unique @db.VarChar(255)
-  username       String     @unique @db.VarChar(255)
-  password       String     @db.VarChar(255)
-  firstName      String     @db.VarChar(255)
-  lastName       String     @db.VarChar(255)
-  profilePicture String?
-  status         UserStatus @default(OFFLINE)
-  lastActive     DateTime   @default(now())
-  createdAt      DateTime   @default(now())
-  updatedAt      DateTime   @updatedAt
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  AVAILABLE
+  BUSY
+  AWAY
+  DO_NOT_DISTURB
+  FOCUS
+}
+
+// ============================================================
+// ROOMS
+//
+// A Room is a persistent virtual 3D space. It exists before,
+// during, and after any session. Think of it like a physical
+// room in a building — it's always there.
+//
+// Real-time state (who's in the room, positions, occupancy)
+// is tracked in Redis, NOT in this table.
+// ============================================================
+model Room {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  name        String     @db.VarChar(255)
+  description String?
+  type        RoomType
+  capacity    Int        @default(30)
+  accessType  AccessType @default(PUBLIC)
+  password    String?
+  isActive    Boolean    @default(true)
+  thumbnail   String?
+
+  createdById String? @db.Uuid()
+  createdBy   User?   @relation("RoomCreator", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions Session[]
+  messages Message[]
+  files    File[]
+  user     User?     @relation(fields: [userId], references: [id])
+  userId   String?   @db.Uuid()
+
+  @@map("rooms")
+}
+
+enum RoomType {
+  WORKSPACE // Open area, casual collaboration, higher capacity
+  MEETING // Structured discussions, smaller group
+  FOCUS // Quiet zone, deep individual/pair work
+}
+
+enum AccessType {
+  PUBLIC // Anyone can enter
+  PRIVATE // Password required to enter
+}
+
+// ============================================================
+// SESSIONS
+//
+// A Session is a formal, time-boxed event that takes place
+// inside a Room. It is OPTIONAL — users can be present in a
+// Room without being part of any Session.
+//
+// Example: A study group creates a Session in the Library Room
+// for 2 hours. Other users can be in the same Room without
+// joining that Session.
+//
+// Access control: Room.password = who can enter the Room.
+//                 Session.password = who can join this Session.
+//                 These are independent concerns.
+// ============================================================
+model Session {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  roomId String @db.Uuid()
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  hostId String @db.Uuid()
+  host   User   @relation("SessionHost", fields: [hostId], references: [id])
+
+  title       String        @db.VarChar(255)
+  description String?
+  type        SessionType
+  status      SessionStatus @default(SCHEDULED)
+
+  scheduledStartTime DateTime? // optional — for planned sessions
+  actualStartTime    DateTime? // set when host clicks "Start"
+  actualEndTime      DateTime? // set when session ends
+  // duration is NOT stored — compute: (actualEndTime - actualStartTime) in service layer
+
+  isLocked Boolean @default(false) // when true, no new participants can join
+  password String? // hashed — separate from Room password
+
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  sessionParticipants SessionParticipant[]
+  sessionLogs         SessionLog[]
+
+  @@map("sessions")
+}
+
+enum SessionType {
+  STUDY
+  MEETING
+  WORKSHOP
+  SOCIAL
+}
+
+enum SessionStatus {
+  SCHEDULED // Created, not yet started
+  ACTIVE // Currently in progress
+  ENDED // Completed normally
+  CANCELLED // Cancelled before starting
+  // PAUSED removed — not in MVP scope
+}
+
+// ============================================================
+// SESSION PARTICIPANTS
+//
+// Records who joined/left a session and when.
+// This is the persistent audit trail.
+//
+// IMPORTANT: Real-time media state (muted, video on/off)
+// belongs in Redis/WebSocket, NOT here. Storing it here
+// would cause a DB write on every mute/unmute click.
+// ============================================================
+model SessionParticipant {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  sessionId String  @db.Uuid()
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String @db.Uuid()
+
+  role   ParticipantRole   @default(PARTICIPANT)
+  status ParticipantStatus @default(ACTIVE)
+
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime? // null = still in session
+  // duration is NOT stored — compute: (leftAt ?? now()) - joinedAt in service layer
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
+  @@map("session_participants")
+}
+
+enum ParticipantRole {
+  HOST
+  PARTICIPANT
+  // CO_HOST removed — not in MVP scope
+}
+
+enum ParticipantStatus {
+  ACTIVE // Currently in the session
+  LEFT // Left voluntarily
+  KICKED // Removed by host
+}
+
+model SessionLog {
+  id        String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  sessionId String  @db.Uuid()
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  userId    String?          @db.Uuid()
+  eventType SessionEventType
+  metadata  Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+  @@map("session_logs")
+}
+
+enum SessionEventType {
+  SESSION_STARTED
+  SESSION_ENDED
+  SESSION_CANCELLED
+  USER_JOINED
+  USER_LEFT
+  USER_KICKED
+  SESSION_LOCKED
+  SESSION_UNLOCKED
+}
+
+// ============================================================
+// MESSAGES
+//
+// Handles both Room chat and Direct Messages (DMs) in one table.
+//
+// INVARIANT (enforced at application layer — Prisma cannot
+// enforce CHECK constraints natively):
+//   - Room message:  roomId IS SET,    recipientId IS NULL
+//   - Direct message: roomId IS NULL,  recipientId IS SET
+//   - Both null or both set = invalid, reject in service layer
+//
+// This is persistent storage for messages only in the base room and direct messages.
+// For other messages, such as session messages, does not store in persistent storage.
+// ============================================================
+model Message {
+  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  roomId      String? @db.Uuid()
+  room        Room?   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  senderId    String  @db.Uuid()
+  sender      User    @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  recipientId String? @db.Uuid()
+  recipient   User?   @relation("MessageRecipient", fields: [recipientId], references: [id])
+
+  content String      @db.Text()
+  type    MessageType @default(TEXT)
+
+  // Reactions stored as "emoji:userUuid" strings, e.g. ["👍:abc-123", "❤️:def-456"]
+  // Simple and sufficient for MVP. Move to a Reaction table post-MVP if needed.
+  reactions String[] @default([])
+
+  isEdited  Boolean @default(false) // explicit flag for UI "edited" indicator
+  isDeleted Boolean @default(false) // soft delete — preserve thread continuity
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?  @db.Uuid()
+
+  @@index([roomId, createdAt])
+  @@index([senderId, recipientId])
+  @@map("messages")
+}
+
+enum MessageType {
+  TEXT
+  FILE // message that references a File upload
+  SYSTEM // auto-generated, e.g. "Alice joined the room"
+  // IMAGE removed — images are just FILE uploads; MessageType.FILE covers this
+}
+
+// ============================================================
+// FILES
+//
+// MinIO holds the bytes. PostgreSQL holds the metadata.
+// Never store a raw presigned URL — they expire. Store
+// storageKey (the MinIO object key) and generate presigned
+// URLs on demand in the service layer.
+//
+// MinIO bucket structure (one bucket per environment):
+//   {bucket}/rooms/{roomId}/library/{fileId}/{originalFilename}
+//   {bucket}/users/{userId}/avatar/{fileId}/{filename}
+//
+// Example object key:
+//   rooms/abc-123/library/f7e2-9d1c/intro-to-algorithms.pdf
+//
+// IMPORTANT: When a File row is deleted from PostgreSQL,
+// also delete the object from MinIO. Use an event emitter
+// listener (file.deleted) to keep this decoupled from the
+// service delete method.
+// ============================================================
+model File {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+
+  name        String  @db.VarChar(255)
+  description String?
+
+  // Storage — the MinIO object key, NOT a presigned URL
+  storageKey String @unique // e.g. "rooms/abc/library/xyz/file.pdf"
+  mimeType   String
+  size       BigInt // bytes
+
+  // Organization — how students discover files in the Library
+  category  FileCategory @default(MISC)
+  tags      String[]     @default([]) // e.g. ["algorithms", "midterm", "year2"]
+  subject   String? // e.g. "CS3101 - Data Structures"
+  yearLevel Int? // 1–4 for senior→junior targeting; null = for everyone
+
+  // Access
+  isPublic      Boolean @default(true) // false = only room members can see it
+  downloadCount Int     @default(0)
+
+  // Who / where
+  uploadedById String @db.Uuid()
+  uploadedBy   User   @relation(fields: [uploadedById], references: [id])
+
+  roomId String? @db.Uuid()
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomId, category]) // library browsing filtered by category
+  @@index([uploadedById])
+  // Add a GIN index manually in a migration for tags array search:
+  // CREATE INDEX files_tags_idx ON files USING GIN (tags);
+  @@map("files")
+}
+
+enum FileCategory {
+  LECTURE_NOTES // slides, typed notes
+  PAST_EXAMS // previous tests, quizzes
+  ASSIGNMENTS // homework, project specs
+  SOLUTIONS // answer keys, worked examples
+  CHEAT_SHEETS // quick reference cards
+  TUTORIAL // how-to guides, walkthroughs
+  RESOURCE // textbooks, papers, external links
+  MISC
+}
+
+model Friendship {
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+
+  requesterId String @db.Uuid()
+  requester   User   @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+
+  addresseeId String @db.Uuid()
+  addressee   User   @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  status FriendshipStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?  @db.Uuid()
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status]) // for "show pending requests to me"
+  @@map("friendships")
+}
+
+enum FriendshipStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  BLOCKED
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+model Notification {
+  id     String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+  userId String @db.Uuid()
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type      NotificationType
+  title     String
+  message   String
+  isRead    Boolean          @default(false)
+  actionUrl String? // deep-link, e.g. "/rooms/abc" or "/friends"
+
+  // Reference back to the source entity for deep-linking and deduplication
+  sourceId   String? // e.g. friendship.id, session.id
+  sourceType String? // e.g. "friendship", "session", "room"
+
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  @@index([userId, isRead])
+  @@map("notifications")
+}
+
+enum NotificationType {
+  FRIEND_REQUEST // someone sent you a friend request
+  FRIEND_ACCEPTED // your friend request was accepted
+  ROOM_INVITE // invited to join a room
+  SESSION_INVITE // invited to join a session
+  SYSTEM // platform-level announcements
 }

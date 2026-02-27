@@ -1,3 +1,13 @@
+# Metasphere — Development Docker Compose
+# Services: NestJS app, PostgreSQL, Redis, MinIO
+#
+# First run:
+#   cp .env.example .env        # fill in your secrets
+#   docker compose up -d
+#
+# MinIO Console: http://localhost:9001  (login with MINIO_ROOT_USER/PASSWORD)
+# API:           http://localhost:3000
+# Prisma Studio: npx (or pnpx) prisma studio   (run locally, not in Docker)
 version: '3.8'
 
 services:
@@ -8,9 +18,9 @@ services:
     ports:
       - '5432:5432'
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: metasphere
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,6 +29,76 @@ services:
       timeout: 5s
       retries: 5
 
+  # ─────────────────────────────────────────
+  # Redis
+  # ─────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # MinIO — S3-compatible object storage
+  #
+  # Two ports:
+  #   9000 → S3 API  (your app talks to this)
+  #   9001 → Web Console (you browse this)
+  # ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    ports:
+      - '9000:9000' # S3 API
+      - '9001:9001' # Web Console — open http://localhost:9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # MinIO Init — runs once to create the
+  # bucket and set its access policy.
+  # Exits with code 0 when done.
+  # The app service waits for this to finish
+  # before starting (service_completed_successfully).
+  # ─────────────────────────────────────────
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    entrypoint: >
+      /bin/sh -c "
+        echo 'Waiting for MinIO to be ready...' &&
+        mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+        echo 'Creating bucket: $${MINIO_BUCKET}' &&
+        mc mb --ignore-existing local/$${MINIO_BUCKET} &&
+        echo 'Setting bucket policy to private (download via presigned URLs only)' &&
+        mc anonymous set none local/$${MINIO_BUCKET} &&
+        echo 'MinIO init complete.'
+      "
+    restart: 'no' # intentionally run once and exit
+
 volumes:
   postgres_data:
-    driver: local
+  redis_data:
+  minio_data:

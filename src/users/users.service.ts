@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, User, UserStatus } from 'src/generated/prisma/client';
 import * as bcrypt from 'bcrypt';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -19,31 +20,24 @@ export class UsersService {
   async findByUsername(
     where: Prisma.UserWhereUniqueInput,
   ): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where,
-    });
+    return this.prisma.user.findUnique({ where });
   }
 
   async findById(id: string): Promise<User | null> {
-    return this.prisma.user.findUnique({
-      where: { id },
+    return this.prisma.user.findUnique({ where: { id } });
+  }
+
+  async updateUser(userId: string, dto: UpdateUserDto): Promise<User> {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { ...dto, lastActive: new Date() },
     });
   }
 
-  async updateUser(
-    userId: string,
-    updateUserDto: Prisma.UserUpdateInput,
-  ): Promise<User> {
+  async updateAvatar(userId: string, avatarPreset: string): Promise<User> {
     return this.prisma.user.update({
       where: { id: userId },
-      data: updateUserDto,
-    });
-  }
-
-  async updateAvatar(userId: string, avatarUrl: string): Promise<User> {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { profilePicture: avatarUrl },
+      data: { avatarPreset, lastActive: new Date() },
     });
   }
 
@@ -58,12 +52,10 @@ export class UsersService {
     return this.prisma.user.findMany({
       where: {
         status: {
-          notIn: [UserStatus.OFFLINE],
+          notIn: [UserStatus.AWAY, UserStatus.DO_NOT_DISTURB],
         },
       },
-      orderBy: {
-        lastActive: 'desc',
-      },
+      orderBy: { lastActive: 'desc' },
     });
   }
 }

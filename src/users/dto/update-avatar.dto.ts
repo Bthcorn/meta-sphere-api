@@ -3,10 +3,10 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateAvatarDto {
   @ApiProperty({
-    description: 'The URL of the new avatar image',
-    example: 'https://example.com/avatar.jpg',
+    description: 'The avatar preset identifier',
+    example: 'avatar3',
   })
   @IsString()
   @IsNotEmpty()
-  avatarUrl: string;
+  avatarPreset: string;
 }
