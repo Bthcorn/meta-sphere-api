@@ -15,6 +15,7 @@ import { FilesModule } from './files/files.module';
 import { AdminModule } from './admin/admin.module';
 import { RolesGuard } from './common/guards/roles.guard';
 import { FriendsModule } from './friends/friends.module';
+import { RealtimeModule } from './realtime/realtime.module';
 import JwtAccessGuard from './auth/decorator/jwt-access-auth.guard';
 
 @Module({
@@ -30,6 +31,7 @@ import JwtAccessGuard from './auth/decorator/jwt-access-auth.guard';
     FilesModule,
     AdminModule,
     FriendsModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [
