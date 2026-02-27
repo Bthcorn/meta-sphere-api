@@ -1,4 +1,5 @@
-export type Position = { x: number; y: number; z: number };
+import { Position } from './dto/position';
+
 export type UserID = string;
 
 export interface UserStatePayload {

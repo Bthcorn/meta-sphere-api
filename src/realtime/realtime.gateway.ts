@@ -11,6 +11,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { StateService } from './state.service';
+import { Position } from './dto/position';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class RealtimeGateway
@@ -19,7 +20,6 @@ export class RealtimeGateway
   @WebSocketServer()
   server: Server;
 
-  private tickRate = 1000 / 30; // 30 ticks per secondc
   private jwtSecret: string;
 
   constructor(
@@ -80,7 +80,7 @@ export class RealtimeGateway
   @SubscribeMessage('update_position')
   handleUpdatePosition(
     @ConnectedSocket() client: Socket,
-    @MessageBody() position: { x: number; y: number; z: number },
+    @MessageBody() position: Position,
   ) {
     const shouldUpdate = this.stateService.updatePosition(client.id, position);
 
