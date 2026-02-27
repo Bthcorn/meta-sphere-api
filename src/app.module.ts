@@ -17,7 +17,6 @@ import { RolesGuard } from './common/guards/roles.guard';
 import { FriendsModule } from './friends/friends.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import JwtAccessGuard from './auth/decorator/jwt-access-auth.guard';
-import { RealtimeGateway } from './realtime/realtime.gateway';
 
 @Module({
   imports: [
