@@ -5,6 +5,9 @@ import {
   WebSocketServer,
   OnGatewayConnection,
   OnGatewayDisconnect,
+  SubscribeMessage,
+  ConnectedSocket,
+  MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { StateService } from './state.service';
@@ -72,5 +75,20 @@ export class RealtimeGateway
   handleDisconnect(client: Socket) {
     const userId = this.stateService.disconnect(client.id);
     this.server.emit('user_disconnected', userId);
+  }
+
+  @SubscribeMessage('update_position')
+  handleUpdatePosition(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() position: { x: number; y: number; z: number },
+  ) {
+    const shouldUpdate = this.stateService.updatePosition(client.id, position);
+
+    if (shouldUpdate) {
+      client.broadcast.emit(
+        'user_moved',
+        this.stateService.getUserState(client.id),
+      );
+    }
   }
 }

@@ -40,4 +40,17 @@ export class StateService {
 
     return array;
   }
+
+  updatePosition(
+    connection: ConnectionID,
+    position: { x: number; y: number; z: number },
+  ): boolean {
+    const state = this.connections.get(connection);
+
+    if (!state) {
+      throw new Error(`No state found for connection ${connection}`);
+    }
+
+    return state.updatePosition(position);
+  }
 }
