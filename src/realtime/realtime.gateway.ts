@@ -7,10 +7,9 @@ import {
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
-import { JwtUser } from 'src/auth/interfaces/jwt-user.interface';
 import { StateService } from './state.service';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({ cors: { origin: '*' } })
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
@@ -51,12 +50,12 @@ export class RealtimeGateway
       throw new Error('Authentication token missing');
     }
 
-    const payload = this.jwtService.verify<JwtUser>(token, {
+    const payload = this.jwtService.verify<{ sub: string }>(token, {
       secret: this.jwtSecret,
     });
 
     // Store the connection in the state service
-    this.stateService.newConnection(client.id, payload.userId);
+    this.stateService.newConnection(client.id, payload.sub);
 
     client.emit('current_state', this.stateService.getAllStates());
     client.broadcast.emit(
