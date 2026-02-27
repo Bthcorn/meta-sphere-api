@@ -190,4 +190,63 @@ describe('RealtimeGateway (e2e)', () => {
       client2.disconnect();
     });
   });
+
+  describe('User Movement', () => {
+    it('should allow a user to update their position', async () => {
+      const userInfo = await registerUser(app, 'testuser3');
+      const client = io(`${serverUrl}?token=${userInfo.jwtToken}`);
+
+      await assertConnected(client);
+
+      client.emit('update_position', { x: 1, y: 2, z: 3 });
+
+      client.disconnect();
+    });
+
+    it('should broadcast user movement to other clients', async () => {
+      const userInfo1 = await registerUser(app, 'testuser4');
+      const userInfo2 = await registerUser(app, 'testuser5');
+      const userInfo3 = await registerUser(app, 'testuser6');
+
+      const client1 = io(`${serverUrl}?token=${userInfo1.jwtToken}`);
+      const client2 = io(`${serverUrl}?token=${userInfo2.jwtToken}`);
+      const client3 = io(`${serverUrl}?token=${userInfo3.jwtToken}`);
+
+      await assertConnected(client1);
+      await assertConnected(client2);
+      await assertConnected(client3);
+
+      const user1MovedPromiseFrom2 = assertOnEvent<UserStatePayload>(
+        client2,
+        'user_moved',
+      );
+      const user1MovedPromiseFrom3 = assertOnEvent<UserStatePayload>(
+        client3,
+        'user_moved',
+      );
+
+      // wait for 1 second to ensure the update is not rate-limited
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      client1.emit('update_position', { x: 5, y: 6, z: 7 });
+
+      const movedState = await user1MovedPromiseFrom2;
+
+      expect(movedState).toMatchObject({
+        position: { x: 5, y: 6, z: 7 },
+        userId: userInfo1.userId,
+      });
+
+      const movedStateFrom3 = await user1MovedPromiseFrom3;
+
+      expect(movedStateFrom3).toMatchObject({
+        position: { x: 5, y: 6, z: 7 },
+        userId: userInfo1.userId,
+      });
+
+      client1.disconnect();
+      client2.disconnect();
+      client3.disconnect();
+    });
+  });
 });
