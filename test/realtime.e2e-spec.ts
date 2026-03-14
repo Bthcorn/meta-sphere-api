@@ -122,6 +122,9 @@ describe('RealtimeGateway (e2e)', () => {
 
   afterEach(async () => {
     // Clean up database after each test
+    await prismaService.sessionParticipant.deleteMany({});
+    await prismaService.session.deleteMany({});
+    await prismaService.room.deleteMany({});
     await prismaService.user.deleteMany({});
   });
 
@@ -243,6 +246,86 @@ describe('RealtimeGateway (e2e)', () => {
         position: { x: 5, y: 6, z: 7 },
         userId: userInfo1.userId,
       });
+
+      client1.disconnect();
+      client2.disconnect();
+      client3.disconnect();
+    });
+
+    it('should isolate rooms (client in different rooms will not receive updates)', async () => {
+      const userInfo1 = await registerUser(app, 'isolate_user1');
+      const userInfo2 = await registerUser(app, 'isolate_user2');
+      const userInfo3 = await registerUser(app, 'isolate_user3');
+
+      // Create a room and active session for user1 and user2
+      const room = await prismaService.room.create({
+        data: {
+          name: 'Test Room',
+          type: 'WORKSPACE',
+          createdById: userInfo1.userId,
+        },
+      });
+
+      const session = await prismaService.session.create({
+        data: {
+          roomId: room.id,
+          hostId: userInfo1.userId,
+          title: 'Test Session',
+          type: 'MEETING',
+          status: 'ACTIVE',
+        },
+      });
+
+      await prismaService.sessionParticipant.createMany({
+        data: [
+          {
+            sessionId: session.id,
+            userId: userInfo1.userId,
+            role: 'PARTICIPANT',
+            status: 'ACTIVE',
+          },
+          {
+            sessionId: session.id,
+            userId: userInfo2.userId,
+            role: 'PARTICIPANT',
+            status: 'ACTIVE',
+          },
+        ],
+      });
+
+      // user3 remains in COMMON_AREA_ID (no session)
+
+      const client1 = io(`${serverUrl}?token=${userInfo1.jwtToken}`);
+      const client2 = io(`${serverUrl}?token=${userInfo2.jwtToken}`);
+      const client3 = io(`${serverUrl}?token=${userInfo3.jwtToken}`);
+
+      await assertConnected(client1);
+      await assertConnected(client2);
+      await assertConnected(client3);
+
+      const user1MovedPromiseFrom2 = assertOnEvent<UserStatePayload>(
+        client2,
+        'user_moved',
+      );
+      const user3MovedHandler = jest.fn();
+      client3.on('user_moved', user3MovedHandler);
+
+      // wait for 1 second to ensure the update is not rate-limited
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      client1.emit('update_position', { x: 10, y: 20, z: 30 });
+
+      const movedState = await user1MovedPromiseFrom2;
+
+      expect(movedState).toMatchObject({
+        position: { x: 10, y: 20, z: 30 },
+        userId: userInfo1.userId,
+      });
+
+      // Give it extra time to ensure spurious event not fired on client3
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(user3MovedHandler).not.toHaveBeenCalled();
 
       client1.disconnect();
       client2.disconnect();
