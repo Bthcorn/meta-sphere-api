@@ -27,7 +27,7 @@ export class RealtimeGateway
   server: Server;
 
   private readonly jwtSecret: string;
-  private readonly userSockets = new Map<string, Set<Socket>>();
+  private readonly userSockets = new Map<string, Socket>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -68,10 +68,11 @@ export class RealtimeGateway
       this.stateService.newConnection(client.id, userId, roomId);
       await client.join(roomId);
 
-      if (!this.userSockets.has(userId)) {
-        this.userSockets.set(userId, new Set());
+      const existingSocket = this.userSockets.get(userId);
+      if (existingSocket) {
+        existingSocket.disconnect();
       }
-      this.userSockets.get(userId)!.add(client);
+      this.userSockets.set(userId, client);
 
       client.emit('current_state', this.stateService.getAllStates(roomId));
       client
@@ -93,11 +94,8 @@ export class RealtimeGateway
 
       this.stateService.disconnect(client.id);
 
-      if (this.userSockets.has(userId)) {
-        this.userSockets.get(userId)!.delete(client);
-        if (this.userSockets.get(userId)!.size === 0) {
-          this.userSockets.delete(userId);
-        }
+      if (this.userSockets.get(userId)?.id === client.id) {
+        this.userSockets.delete(userId);
       }
 
       this.server.to(roomId).emit('user_disconnected', userId);
@@ -123,31 +121,29 @@ export class RealtimeGateway
     userId: string,
     newRoomId: string,
   ): Promise<void> {
-    const sockets = this.userSockets.get(userId);
-    if (!sockets) return;
+    const socket = this.userSockets.get(userId);
+    if (!socket) return;
 
-    for (const socket of sockets) {
-      try {
-        const state = this.stateService.getUserState(socket.id);
-        const oldRoom = state.currentUserRoom;
+    try {
+      const state = this.stateService.getUserState(socket.id);
+      const oldRoom = state.currentUserRoom;
 
-        if (oldRoom === newRoomId) continue;
+      if (oldRoom === newRoomId) return;
 
-        await socket.leave(oldRoom);
-        await socket.join(newRoomId);
-        state.setRoom(newRoomId);
+      await socket.leave(oldRoom);
+      await socket.join(newRoomId);
+      state.setRoom(newRoomId);
 
-        // Notify old room
-        socket.to(oldRoom).emit('user_disconnected', userId);
+      // Notify old room
+      socket.to(oldRoom).emit('user_disconnected', userId);
 
-        // Update local client with new room state
-        socket.emit('current_state', this.stateService.getAllStates(newRoomId));
+      // Update local client with new room state
+      socket.emit('current_state', this.stateService.getAllStates(newRoomId));
 
-        // Notify new room
-        socket.to(newRoomId).emit('user_connected', state.asPayload());
-      } catch {
-        // Ignored
-      }
+      // Notify new room
+      socket.to(newRoomId).emit('user_connected', state.asPayload());
+    } catch {
+      // Ignored
     }
   }
 
