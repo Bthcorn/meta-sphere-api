@@ -33,6 +33,22 @@ export class StateService {
     return this.getUserState(connection).asPayload();
   }
 
+  changeRoom(connection: ConnectionID, newRoomId: string): void {
+    const state = this.getUserState(connection);
+    const oldRoom = state.currentUserRoom;
+
+    if (oldRoom === newRoomId) return;
+
+    this.connnectionsByRoom.get(oldRoom)?.delete(connection);
+
+    state.setRoom(newRoomId);
+
+    if (!this.connnectionsByRoom.has(newRoomId)) {
+      this.connnectionsByRoom.set(newRoomId, new Set());
+    }
+    this.connnectionsByRoom.get(newRoomId)!.add(connection);
+  }
+
   getUserState(connection: ConnectionID): UserState {
     const state = this.connections.get(connection);
 

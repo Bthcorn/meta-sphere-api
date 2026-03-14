@@ -132,7 +132,7 @@ export class RealtimeGateway
 
       await socket.leave(oldRoom);
       await socket.join(newRoomId);
-      state.setRoom(newRoomId);
+      this.stateService.changeRoom(socket.id, newRoomId);
 
       // Notify old room
       socket.to(oldRoom).emit('user_disconnected', userId);
