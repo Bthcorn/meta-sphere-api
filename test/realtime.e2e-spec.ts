@@ -69,14 +69,18 @@ function assertOnEvent<T>(
   event: string,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    client.once(event, (data) => {
-      resolve(data as T);
-    });
-
-    client.once('connect_error', (err) => {
+    const onEvent = (data: T) => {
+      client.off('connect_error', onError);
+      resolve(data);
+    };
+    const onError = (err: Error) => {
+      client.off(event, onEvent);
       console.error(`Error while waiting for event "${event}":`, err);
       reject(err);
-    });
+    };
+
+    client.once(event, onEvent);
+    client.once('connect_error', onError);
   });
 }
 
@@ -318,6 +322,100 @@ describe('RealtimeGateway (e2e)', () => {
       client1.disconnect();
       client2.disconnect();
       client3.disconnect();
+    });
+  });
+
+  describe('Dynamic Room Joining and Leaving', () => {
+    it('should change room when session.joined and session.left events are processed', async () => {
+      const userInfo1 = await registerUser(app, 'dynamic_user1');
+      const userInfo2 = await registerUser(app, 'dynamic_user2');
+
+      const roomsService = app.get(RoomsService);
+      const sessionsService = app.get(SessionsService);
+
+      // User 1 creates the session environment
+      const room = await roomsService.create(userInfo1.userId, {
+        name: 'Dynamic Room',
+        type: RoomType.WORKSPACE,
+      });
+
+      const session = await sessionsService.create(userInfo1.userId, {
+        roomId: room.id,
+        title: 'Dynamic Session',
+        type: SessionType.MEETING,
+      });
+
+      await sessionsService.start(session.id, userInfo1.userId);
+
+      // Now both connect.
+      // user1 -> in session (created & started it, getActiveUserSession returns it)
+      // user2 -> in COMMON_AREA_ID (hasn't joined the session yet)
+      const client1 = io(`${serverUrl}?token=${userInfo1.jwtToken}`);
+      const client2 = io(`${serverUrl}?token=${userInfo2.jwtToken}`);
+
+      await assertConnected(client1);
+      await assertConnected(client2);
+
+      // Wait a moment for initial connections to settle to avoid confusing initial state events with room switching events
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const user2JoinedNewRoomPromise = assertOnEvent<UserStatePayload>(
+        client1,
+        'user_connected',
+      );
+      const user2CurrentStateNewRoomPromise = assertOnEvent<UserStatePayload[]>(
+        client2,
+        'current_state',
+      );
+
+      // User 2 joins the active session dynamically!
+      // This will trigger 'session.joined' event for user2.
+      await sessionsService.join(session.id, userInfo2.userId);
+
+      // Client 1 (who is in the session) should see user 2 connect
+      const newlyConnectedUser = await user2JoinedNewRoomPromise;
+      expect(newlyConnectedUser.userId).toBe(userInfo2.userId);
+
+      // Client 2 should receive the whole room state for the new session
+      const newStateForUser2 = await user2CurrentStateNewRoomPromise;
+      // It should include user1 and user2
+      expect(newStateForUser2).toHaveLength(2);
+      expect(newStateForUser2.some((u) => u.userId === userInfo1.userId)).toBe(
+        true,
+      );
+      expect(newStateForUser2.some((u) => u.userId === userInfo2.userId)).toBe(
+        true,
+      );
+
+      // Now User 2 leaves the session dynamically!
+      // This will trigger 'session.left' event for user2.
+      const user2DisconnectedFromSessionPromise = assertOnEvent<string>(
+        client1,
+        'user_disconnected',
+      );
+      const user2CurrentStateCommonRoomPromise = assertOnEvent<
+        UserStatePayload[]
+      >(client2, 'current_state');
+
+      await sessionsService.leave(session.id, userInfo2.userId);
+
+      console.log('Awaiting events for user 2 leaving');
+      // Client 1 should see user 2 disconnect from the session
+      const userLeftSessionId = await user2DisconnectedFromSessionPromise;
+      expect(userLeftSessionId).toBe(userInfo2.userId);
+
+      // Client 2 should receive the state of COMMON_AREA_ID again
+      const finalStateForUser2 = await user2CurrentStateCommonRoomPromise;
+      // Should definitely include user2, but no longer user1
+      expect(
+        finalStateForUser2.find((u) => u.userId === userInfo1.userId),
+      ).toBeUndefined();
+      expect(
+        finalStateForUser2.find((u) => u.userId === userInfo2.userId),
+      ).toBeDefined();
+
+      client1.disconnect();
+      client2.disconnect();
     });
   });
 });
