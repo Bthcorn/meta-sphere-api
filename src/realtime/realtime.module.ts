@@ -4,10 +4,12 @@ import { JwtModule } from '@nestjs/jwt';
 import { StateService } from './state.service';
 import { RealtimeGateway } from './realtime.gateway';
 import { WsJwtGuard } from './guards/ws-jwt.guard';
+import { SessionsModule } from '../sessions/sessions.module';
 
 @Module({
   imports: [
     ConfigModule,
+    SessionsModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -18,5 +20,6 @@ import { WsJwtGuard } from './guards/ws-jwt.guard';
     }),
   ],
   providers: [StateService, RealtimeGateway, WsJwtGuard],
+  exports: [RealtimeGateway, StateService],
 })
 export class RealtimeModule {}

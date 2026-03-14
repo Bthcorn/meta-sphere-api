@@ -8,12 +8,16 @@ import {
   ConnectedSocket,
   MessageBody,
 } from '@nestjs/websockets';
+import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { StateService } from './state.service';
 import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { Position } from './dto/position';
+import { SessionsService } from '../sessions/sessions.service';
+
+const COMMON_AREA_ID = 'common_area';
 
 @WebSocketGateway({ cors: { origin: '*' } })
 export class RealtimeGateway
@@ -23,11 +27,13 @@ export class RealtimeGateway
   server: Server;
 
   private readonly jwtSecret: string;
+  private readonly userSockets = new Map<string, Set<Socket>>();
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly stateService: StateService,
+    private readonly sessionsService: SessionsService,
   ) {
     const secret = this.configService.get<string>('JWT_ACCESS_TOKEN_SECRET');
     if (!secret || typeof secret !== 'string') {
@@ -36,8 +42,10 @@ export class RealtimeGateway
     this.jwtSecret = secret;
   }
 
-  handleConnection(client: Socket): void {
+  async handleConnection(client: Socket): Promise<void> {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const token = client.handshake.query?.token ?? client.handshake.auth?.token;
+
     if (typeof token !== 'string') {
       client.disconnect();
       return;
@@ -47,21 +55,100 @@ export class RealtimeGateway
       const payload = this.jwtService.verify<{ sub: string }>(token, {
         secret: this.jwtSecret,
       });
-      this.stateService.newConnection(client.id, payload.sub);
+      const userId = payload.sub;
 
-      client.emit('current_state', this.stateService.getAllStates());
-      client.broadcast.emit(
-        'user_connected',
-        this.stateService.getUserState(client.id),
-      );
+      let roomId = COMMON_AREA_ID;
+      const activeSession =
+        await this.sessionsService.getActiveUserSession(userId);
+
+      if (activeSession) {
+        roomId = activeSession.id;
+      }
+
+      this.stateService.newConnection(client.id, userId, roomId);
+      await client.join(roomId);
+
+      if (!this.userSockets.has(userId)) {
+        this.userSockets.set(userId, new Set());
+      }
+      this.userSockets.get(userId)!.add(client);
+
+      client.emit('current_state', this.stateService.getAllStates(roomId));
+      client
+        .to(roomId)
+        .emit(
+          'user_connected',
+          this.stateService.getUserStatePayload(client.id),
+        );
     } catch {
       client.disconnect();
     }
   }
 
   handleDisconnect(client: Socket): void {
-    const userId = this.stateService.disconnect(client.id);
-    this.server.emit('user_disconnected', userId);
+    try {
+      const state = this.stateService.getUserState(client.id);
+      const userId = state.asPayload().userId;
+      const roomId = state.currentUserRoom;
+
+      this.stateService.disconnect(client.id);
+
+      if (this.userSockets.has(userId)) {
+        this.userSockets.get(userId)!.delete(client);
+        if (this.userSockets.get(userId)!.size === 0) {
+          this.userSockets.delete(userId);
+        }
+      }
+
+      this.server.to(roomId).emit('user_disconnected', userId);
+    } catch {
+      // client might not be registered if JWT verification failed
+    }
+  }
+
+  @OnEvent('session.joined')
+  async handleSessionJoined(payload: {
+    userId: string;
+    roomId: string;
+  }): Promise<void> {
+    await this.switchUserRoom(payload.userId, payload.roomId);
+  }
+
+  @OnEvent('session.left')
+  async handleSessionLeft(payload: { userId: string }): Promise<void> {
+    await this.switchUserRoom(payload.userId, COMMON_AREA_ID);
+  }
+
+  private async switchUserRoom(
+    userId: string,
+    newRoomId: string,
+  ): Promise<void> {
+    const sockets = this.userSockets.get(userId);
+    if (!sockets) return;
+
+    for (const socket of sockets) {
+      try {
+        const state = this.stateService.getUserState(socket.id);
+        const oldRoom = state.currentUserRoom;
+
+        if (oldRoom === newRoomId) continue;
+
+        await socket.leave(oldRoom);
+        await socket.join(newRoomId);
+        state.setRoom(newRoomId);
+
+        // Notify old room
+        socket.to(oldRoom).emit('user_disconnected', userId);
+
+        // Update local client with new room state
+        socket.emit('current_state', this.stateService.getAllStates(newRoomId));
+
+        // Notify new room
+        socket.to(newRoomId).emit('user_connected', state.asPayload());
+      } catch {
+        // Ignored
+      }
+    }
   }
 
   @UseGuards(WsJwtGuard)
@@ -72,10 +159,8 @@ export class RealtimeGateway
   ): void {
     const shouldUpdate = this.stateService.updatePosition(client.id, position);
     if (shouldUpdate) {
-      client.broadcast.emit(
-        'user_moved',
-        this.stateService.getUserState(client.id),
-      );
+      const state = this.stateService.getUserState(client.id);
+      client.to(state.currentUserRoom).emit('user_moved', state.asPayload());
     }
   }
 }

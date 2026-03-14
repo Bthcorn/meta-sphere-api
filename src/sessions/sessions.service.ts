@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   SessionStatus,
   SessionEventType,
@@ -20,7 +21,10 @@ import { ListSessionsDto } from './dto/list-sessions.dto';
 
 @Injectable()
 export class SessionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -32,7 +36,9 @@ export class SessionsService {
 
   private assertHost(session: { hostId: string }, userId: string) {
     if (session.hostId !== userId) {
-      throw new ForbiddenException('Only the session host can perform this action');
+      throw new ForbiddenException(
+        'Only the session host can perform this action',
+      );
     }
   }
 
@@ -73,7 +79,9 @@ export class SessionsService {
   }
 
   async create(hostId: string, dto: CreateSessionDto) {
-    const room = await this.prisma.room.findUnique({ where: { id: dto.roomId } });
+    const room = await this.prisma.room.findUnique({
+      where: { id: dto.roomId },
+    });
     if (!room || !room.isActive) throw new NotFoundException('Room not found');
 
     const hashedPassword = dto.password
@@ -136,7 +144,9 @@ export class SessionsService {
     if (dto.isLocked !== undefined && dto.isLocked !== session.isLocked) {
       await this.writeLog(
         id,
-        dto.isLocked ? SessionEventType.SESSION_LOCKED : SessionEventType.SESSION_UNLOCKED,
+        dto.isLocked
+          ? SessionEventType.SESSION_LOCKED
+          : SessionEventType.SESSION_UNLOCKED,
         userId,
       );
     }
@@ -215,7 +225,9 @@ export class SessionsService {
     }
 
     if (session.isLocked) {
-      throw new ConflictException('Session is locked — no new participants can join');
+      throw new ConflictException(
+        'Session is locked — no new participants can join',
+      );
     }
 
     if (session.password) {
@@ -244,6 +256,7 @@ export class SessionsService {
     }
 
     await this.writeLog(id, SessionEventType.USER_JOINED, userId);
+    this.eventEmitter.emit('session.joined', { userId, roomId: id });
     return { message: 'Joined session successfully' };
   }
 
@@ -261,7 +274,9 @@ export class SessionsService {
     });
 
     if (!participant || participant.status !== ParticipantStatus.ACTIVE) {
-      throw new ConflictException('You are not an active participant in this session');
+      throw new ConflictException(
+        'You are not an active participant in this session',
+      );
     }
 
     await this.prisma.sessionParticipant.update({
@@ -270,6 +285,7 @@ export class SessionsService {
     });
 
     await this.writeLog(id, SessionEventType.USER_LEFT, userId);
+    this.eventEmitter.emit('session.left', { userId });
     return { message: 'Left session successfully' };
   }
 
@@ -319,6 +335,7 @@ export class SessionsService {
     await this.writeLog(id, SessionEventType.USER_KICKED, targetUserId, {
       kickedBy: hostId,
     });
+    this.eventEmitter.emit('session.left', { userId: targetUserId });
 
     return { message: 'Participant removed from session' };
   }
@@ -330,5 +347,29 @@ export class SessionsService {
       where: { sessionId: id },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  async getActiveUserSession(userId: string) {
+    const activeParticipation = await this.prisma.sessionParticipant.findFirst({
+      where: {
+        userId,
+        status: ParticipantStatus.ACTIVE,
+        session: {
+          status: SessionStatus.ACTIVE,
+        },
+      },
+      include: {
+        session: true,
+      },
+      orderBy: {
+        joinedAt: 'desc',
+      },
+    });
+
+    if (!activeParticipation) {
+      return null;
+    }
+
+    return activeParticipation.session;
   }
 }
