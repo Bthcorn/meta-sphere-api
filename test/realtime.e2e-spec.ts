@@ -7,6 +7,9 @@ import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { DefaultEventsMap } from 'socket.io';
 import { UserStatePayload } from 'src/realtime/user-state';
+import { RoomsService } from '../src/rooms/rooms.service';
+import { SessionsService } from '../src/sessions/sessions.service';
+import { RoomType, SessionType } from '../src/generated/prisma/client';
 
 export interface UserInfo {
   jwtToken: string;
@@ -257,41 +260,26 @@ describe('RealtimeGateway (e2e)', () => {
       const userInfo2 = await registerUser(app, 'isolate_user2');
       const userInfo3 = await registerUser(app, 'isolate_user3');
 
+      const roomsService = app.get(RoomsService);
+      const sessionsService = app.get(SessionsService);
+
       // Create a room and active session for user1 and user2
-      const room = await prismaService.room.create({
-        data: {
-          name: 'Test Room',
-          type: 'WORKSPACE',
-          createdById: userInfo1.userId,
-        },
+      const room = await roomsService.create(userInfo1.userId, {
+        name: 'Test Room',
+        type: RoomType.WORKSPACE,
       });
 
-      const session = await prismaService.session.create({
-        data: {
-          roomId: room.id,
-          hostId: userInfo1.userId,
-          title: 'Test Session',
-          type: 'MEETING',
-          status: 'ACTIVE',
-        },
+      const session = await sessionsService.create(userInfo1.userId, {
+        roomId: room.id,
+        title: 'Test Session',
+        type: SessionType.MEETING,
       });
 
-      await prismaService.sessionParticipant.createMany({
-        data: [
-          {
-            sessionId: session.id,
-            userId: userInfo1.userId,
-            role: 'PARTICIPANT',
-            status: 'ACTIVE',
-          },
-          {
-            sessionId: session.id,
-            userId: userInfo2.userId,
-            role: 'PARTICIPANT',
-            status: 'ACTIVE',
-          },
-        ],
-      });
+      // Start the session
+      await sessionsService.start(session.id, userInfo1.userId);
+
+      // Join user2
+      await sessionsService.join(session.id, userInfo2.userId);
 
       // user3 remains in COMMON_AREA_ID (no session)
 
