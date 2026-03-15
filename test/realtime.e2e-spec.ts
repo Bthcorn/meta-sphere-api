@@ -399,7 +399,6 @@ describe('RealtimeGateway (e2e)', () => {
 
       await sessionsService.leave(session.id, userInfo2.userId);
 
-      console.log('Awaiting events for user 2 leaving');
       // Client 1 should see user 2 disconnect from the session
       const userLeftSessionId = await user2DisconnectedFromSessionPromise;
       expect(userLeftSessionId).toBe(userInfo2.userId);
