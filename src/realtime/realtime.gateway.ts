@@ -109,9 +109,9 @@ export class RealtimeGateway
   @OnEvent('session.joined')
   async handleSessionJoined(payload: {
     userId: string;
-    roomId: string;
+    sessionId: string;
   }): Promise<void> {
-    await this.switchUserRoom(payload.userId, payload.roomId);
+    await this.switchUserRoom(payload.userId, payload.sessionId);
   }
 
   @OnEvent('session.left')

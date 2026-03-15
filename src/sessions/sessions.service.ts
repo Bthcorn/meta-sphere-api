@@ -256,7 +256,7 @@ export class SessionsService {
     }
 
     await this.writeLog(id, SessionEventType.USER_JOINED, userId);
-    this.eventEmitter.emit('session.joined', { userId, roomId: id });
+    this.eventEmitter.emit('session.joined', { userId, sessionId: id });
     return { message: 'Joined session successfully' };
   }
 
