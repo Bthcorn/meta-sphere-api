@@ -8,6 +8,7 @@ import {
 import * as bcrypt from 'bcrypt';
 import { SessionsService } from './sessions.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   SessionStatus,
   SessionType,
@@ -93,6 +94,7 @@ describe('SessionsService', () => {
       providers: [
         SessionsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 
@@ -133,7 +135,9 @@ describe('SessionsService', () => {
 
       await service.findAll({});
 
-      const [call] = mockPrisma.session.findMany.mock.calls as [{ where: object }][];
+      const [call] = mockPrisma.session.findMany.mock.calls as [
+        { where: object },
+      ][];
       expect(call[0].where).toEqual({});
     });
   });
@@ -195,7 +199,10 @@ describe('SessionsService', () => {
     });
 
     it('should throw NotFoundException when room is inactive', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue({ ...mockRoom, isActive: false });
+      mockPrisma.room.findUnique.mockResolvedValue({
+        ...mockRoom,
+        isActive: false,
+      });
 
       await expect(
         service.create('user-host', {
@@ -231,9 +238,14 @@ describe('SessionsService', () => {
   describe('update', () => {
     it('should update session as host', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(mockSession);
-      mockPrisma.session.update.mockResolvedValue({ ...mockSession, title: 'New Title' });
+      mockPrisma.session.update.mockResolvedValue({
+        ...mockSession,
+        title: 'New Title',
+      });
 
-      const result = await service.update('session-1', 'user-host', { title: 'New Title' });
+      const result = await service.update('session-1', 'user-host', {
+        title: 'New Title',
+      });
 
       expect(mockPrisma.session.update).toHaveBeenCalled();
       expect(result).not.toHaveProperty('password');
@@ -259,26 +271,42 @@ describe('SessionsService', () => {
     });
 
     it('should log SESSION_LOCKED when isLocked changes to true', async () => {
-      mockPrisma.session.findUnique.mockResolvedValue({ ...mockSession, isLocked: false });
-      mockPrisma.session.update.mockResolvedValue({ ...mockSession, isLocked: true });
+      mockPrisma.session.findUnique.mockResolvedValue({
+        ...mockSession,
+        isLocked: false,
+      });
+      mockPrisma.session.update.mockResolvedValue({
+        ...mockSession,
+        isLocked: true,
+      });
       mockPrisma.sessionLog.create.mockResolvedValue({});
 
       await service.update('session-1', 'user-host', { isLocked: true });
 
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.SESSION_LOCKED }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.SESSION_LOCKED,
+        }),
       });
     });
 
     it('should log SESSION_UNLOCKED when isLocked changes to false', async () => {
-      mockPrisma.session.findUnique.mockResolvedValue({ ...mockSession, isLocked: true });
-      mockPrisma.session.update.mockResolvedValue({ ...mockSession, isLocked: false });
+      mockPrisma.session.findUnique.mockResolvedValue({
+        ...mockSession,
+        isLocked: true,
+      });
+      mockPrisma.session.update.mockResolvedValue({
+        ...mockSession,
+        isLocked: false,
+      });
       mockPrisma.sessionLog.create.mockResolvedValue({});
 
       await service.update('session-1', 'user-host', { isLocked: false });
 
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.SESSION_UNLOCKED }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.SESSION_UNLOCKED,
+        }),
       });
     });
   });
@@ -299,7 +327,9 @@ describe('SessionsService', () => {
         }),
       );
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.SESSION_STARTED }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.SESSION_STARTED,
+        }),
       });
       expect(result.status).toBe(SessionStatus.ACTIVE);
     });
@@ -307,13 +337,17 @@ describe('SessionsService', () => {
     it('should throw ForbiddenException when caller is not the host', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(mockSession);
 
-      await expect(service.start('session-1', 'user-other')).rejects.toThrow(ForbiddenException);
+      await expect(service.start('session-1', 'user-other')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw ConflictException when session is already ACTIVE', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
 
-      await expect(service.start('session-1', 'user-host')).rejects.toThrow(ConflictException);
+      await expect(service.start('session-1', 'user-host')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -336,7 +370,9 @@ describe('SessionsService', () => {
         data: { status: ParticipantStatus.LEFT, leftAt: expect.any(Date) },
       });
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.SESSION_ENDED }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.SESSION_ENDED,
+        }),
       });
       expect(result.status).toBe(SessionStatus.ENDED);
     });
@@ -344,13 +380,17 @@ describe('SessionsService', () => {
     it('should throw ForbiddenException when caller is not the host', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
 
-      await expect(service.end('session-1', 'user-other')).rejects.toThrow(ForbiddenException);
+      await expect(service.end('session-1', 'user-other')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw ConflictException when session is not ACTIVE', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(mockSession); // SCHEDULED
 
-      await expect(service.end('session-1', 'user-host')).rejects.toThrow(ConflictException);
+      await expect(service.end('session-1', 'user-host')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -367,14 +407,18 @@ describe('SessionsService', () => {
 
       expect(mockPrisma.sessionParticipant.create).toHaveBeenCalled();
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.USER_JOINED }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.USER_JOINED,
+        }),
       });
       expect(result.message).toBe('Joined session successfully');
     });
 
     it('should return early when user is already ACTIVE', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(mockSession);
-      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(memberParticipant);
+      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(
+        memberParticipant,
+      );
 
       const result = await service.join('session-1', 'user-member');
 
@@ -389,19 +433,29 @@ describe('SessionsService', () => {
         status: ParticipantStatus.KICKED,
       });
 
-      await expect(service.join('session-1', 'user-member')).rejects.toThrow(ForbiddenException);
+      await expect(service.join('session-1', 'user-member')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw ConflictException when session is locked', async () => {
-      mockPrisma.session.findUnique.mockResolvedValue({ ...mockSession, isLocked: true });
+      mockPrisma.session.findUnique.mockResolvedValue({
+        ...mockSession,
+        isLocked: true,
+      });
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
 
-      await expect(service.join('session-1', 'user-member')).rejects.toThrow(ConflictException);
+      await expect(service.join('session-1', 'user-member')).rejects.toThrow(
+        ConflictException,
+      );
     });
 
     it('should join a password-protected session with the correct password', async () => {
       const hashed = await bcrypt.hash('secret', 10);
-      mockPrisma.session.findUnique.mockResolvedValue({ ...mockSession, password: hashed });
+      mockPrisma.session.findUnique.mockResolvedValue({
+        ...mockSession,
+        password: hashed,
+      });
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
       mockPrisma.sessionParticipant.create.mockResolvedValue(memberParticipant);
       mockPrisma.sessionLog.create.mockResolvedValue({});
@@ -418,17 +472,22 @@ describe('SessionsService', () => {
       });
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
 
-      await expect(service.join('session-1', 'user-member')).rejects.toThrow(BadRequestException);
+      await expect(service.join('session-1', 'user-member')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw ForbiddenException on wrong password', async () => {
       const hashed = await bcrypt.hash('correct', 10);
-      mockPrisma.session.findUnique.mockResolvedValue({ ...mockSession, password: hashed });
+      mockPrisma.session.findUnique.mockResolvedValue({
+        ...mockSession,
+        password: hashed,
+      });
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
 
-      await expect(service.join('session-1', 'user-member', 'wrong')).rejects.toThrow(
-        ForbiddenException,
-      );
+      await expect(
+        service.join('session-1', 'user-member', 'wrong'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should allow a LEFT user to rejoin', async () => {
@@ -457,7 +516,9 @@ describe('SessionsService', () => {
       });
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
 
-      await expect(service.join('session-1', 'user-member')).rejects.toThrow(ConflictException);
+      await expect(service.join('session-1', 'user-member')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -466,7 +527,9 @@ describe('SessionsService', () => {
   describe('leave', () => {
     it('should mark participant as LEFT', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
-      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(memberParticipant);
+      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(
+        memberParticipant,
+      );
       mockPrisma.sessionParticipant.update.mockResolvedValue({
         ...memberParticipant,
         status: ParticipantStatus.LEFT,
@@ -484,7 +547,9 @@ describe('SessionsService', () => {
         }),
       );
       expect(mockPrisma.sessionLog.create).toHaveBeenCalledWith({
-        data: expect.objectContaining({ eventType: SessionEventType.USER_LEFT }),
+        data: expect.objectContaining({
+          eventType: SessionEventType.USER_LEFT,
+        }),
       });
       expect(result.message).toBe('Left session successfully');
     });
@@ -492,14 +557,18 @@ describe('SessionsService', () => {
     it('should throw BadRequestException when host tries to leave', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
 
-      await expect(service.leave('session-1', 'user-host')).rejects.toThrow(BadRequestException);
+      await expect(service.leave('session-1', 'user-host')).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw ConflictException when user is not an active participant', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
       mockPrisma.sessionParticipant.findUnique.mockResolvedValue(null);
 
-      await expect(service.leave('session-1', 'user-member')).rejects.toThrow(ConflictException);
+      await expect(service.leave('session-1', 'user-member')).rejects.toThrow(
+        ConflictException,
+      );
     });
   });
 
@@ -523,7 +592,9 @@ describe('SessionsService', () => {
     it('should throw NotFoundException when session does not exist', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(null);
 
-      await expect(service.getParticipants('bad')).rejects.toThrow(NotFoundException);
+      await expect(service.getParticipants('bad')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -532,14 +603,20 @@ describe('SessionsService', () => {
   describe('kickParticipant', () => {
     it('should kick an active participant and log the event', async () => {
       mockPrisma.session.findUnique.mockResolvedValue(activeSession);
-      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(memberParticipant);
+      mockPrisma.sessionParticipant.findUnique.mockResolvedValue(
+        memberParticipant,
+      );
       mockPrisma.sessionParticipant.update.mockResolvedValue({
         ...memberParticipant,
         status: ParticipantStatus.KICKED,
       });
       mockPrisma.sessionLog.create.mockResolvedValue({});
 
-      const result = await service.kickParticipant('session-1', 'user-host', 'user-member');
+      const result = await service.kickParticipant(
+        'session-1',
+        'user-host',
+        'user-member',
+      );
 
       expect(mockPrisma.sessionParticipant.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -586,7 +663,14 @@ describe('SessionsService', () => {
   describe('getLogs', () => {
     it('should return session logs ordered by createdAt', async () => {
       const logs = [
-        { id: 'log-1', sessionId: 'session-1', eventType: SessionEventType.SESSION_STARTED, userId: 'user-host', metadata: null, createdAt: new Date() },
+        {
+          id: 'log-1',
+          sessionId: 'session-1',
+          eventType: SessionEventType.SESSION_STARTED,
+          userId: 'user-host',
+          metadata: null,
+          createdAt: new Date(),
+        },
       ];
       mockPrisma.session.findUnique.mockResolvedValue(mockSession);
       mockPrisma.sessionLog.findMany.mockResolvedValue(logs);

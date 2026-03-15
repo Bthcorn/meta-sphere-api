@@ -7,6 +7,9 @@ import request from 'supertest';
 import { io, Socket } from 'socket.io-client';
 import { DefaultEventsMap } from 'socket.io';
 import { UserStatePayload } from 'src/realtime/user-state';
+import { RoomsService } from '../src/rooms/rooms.service';
+import { SessionsService } from '../src/sessions/sessions.service';
+import { RoomType, SessionType } from '../src/generated/prisma/client';
 
 export interface UserInfo {
   jwtToken: string;
@@ -66,14 +69,18 @@ function assertOnEvent<T>(
   event: string,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    client.once(event, (data) => {
-      resolve(data as T);
-    });
-
-    client.once('connect_error', (err) => {
+    const onEvent = (data: T) => {
+      client.off('connect_error', onError);
+      resolve(data);
+    };
+    const onError = (err: Error) => {
+      client.off(event, onEvent);
       console.error(`Error while waiting for event "${event}":`, err);
       reject(err);
-    });
+    };
+
+    client.once(event, onEvent);
+    client.once('connect_error', onError);
   });
 }
 
@@ -122,6 +129,9 @@ describe('RealtimeGateway (e2e)', () => {
 
   afterEach(async () => {
     // Clean up database after each test
+    await prismaService.sessionParticipant.deleteMany({});
+    await prismaService.session.deleteMany({});
+    await prismaService.room.deleteMany({});
     await prismaService.user.deleteMany({});
   });
 
@@ -247,6 +257,164 @@ describe('RealtimeGateway (e2e)', () => {
       client1.disconnect();
       client2.disconnect();
       client3.disconnect();
+    });
+
+    it('should isolate rooms (client in different rooms will not receive updates)', async () => {
+      const userInfo1 = await registerUser(app, 'isolate_user1');
+      const userInfo2 = await registerUser(app, 'isolate_user2');
+      const userInfo3 = await registerUser(app, 'isolate_user3');
+
+      const roomsService = app.get(RoomsService);
+      const sessionsService = app.get(SessionsService);
+
+      // Create a room and active session for user1 and user2
+      const room = await roomsService.create(userInfo1.userId, {
+        name: 'Test Room',
+        type: RoomType.WORKSPACE,
+      });
+
+      const session = await sessionsService.create(userInfo1.userId, {
+        roomId: room.id,
+        title: 'Test Session',
+        type: SessionType.MEETING,
+      });
+
+      // Start the session
+      await sessionsService.start(session.id, userInfo1.userId);
+
+      // Join user2
+      await sessionsService.join(session.id, userInfo2.userId);
+
+      // user3 remains in COMMON_AREA_ID (no session)
+
+      const client1 = io(`${serverUrl}?token=${userInfo1.jwtToken}`);
+      const client2 = io(`${serverUrl}?token=${userInfo2.jwtToken}`);
+      const client3 = io(`${serverUrl}?token=${userInfo3.jwtToken}`);
+
+      await assertConnected(client1);
+      await assertConnected(client2);
+      await assertConnected(client3);
+
+      const user1MovedPromiseFrom2 = assertOnEvent<UserStatePayload>(
+        client2,
+        'user_moved',
+      );
+      const user3MovedHandler = jest.fn();
+      client3.on('user_moved', user3MovedHandler);
+
+      // wait for 1 second to ensure the update is not rate-limited
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      client1.emit('update_position', { x: 10, y: 20, z: 30 });
+
+      const movedState = await user1MovedPromiseFrom2;
+
+      expect(movedState).toMatchObject({
+        position: { x: 10, y: 20, z: 30 },
+        userId: userInfo1.userId,
+      });
+
+      // Give it extra time to ensure spurious event not fired on client3
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      expect(user3MovedHandler).not.toHaveBeenCalled();
+
+      client1.disconnect();
+      client2.disconnect();
+      client3.disconnect();
+    });
+  });
+
+  describe('Dynamic Room Joining and Leaving', () => {
+    it('should change room when session.joined and session.left events are processed', async () => {
+      const userInfo1 = await registerUser(app, 'dynamic_user1');
+      const userInfo2 = await registerUser(app, 'dynamic_user2');
+
+      const roomsService = app.get(RoomsService);
+      const sessionsService = app.get(SessionsService);
+
+      // User 1 creates the session environment
+      const room = await roomsService.create(userInfo1.userId, {
+        name: 'Dynamic Room',
+        type: RoomType.WORKSPACE,
+      });
+
+      const session = await sessionsService.create(userInfo1.userId, {
+        roomId: room.id,
+        title: 'Dynamic Session',
+        type: SessionType.MEETING,
+      });
+
+      await sessionsService.start(session.id, userInfo1.userId);
+
+      // Now both connect.
+      // user1 -> in session (created & started it, getActiveUserSession returns it)
+      // user2 -> in COMMON_AREA_ID (hasn't joined the session yet)
+      const client1 = io(`${serverUrl}?token=${userInfo1.jwtToken}`);
+      const client2 = io(`${serverUrl}?token=${userInfo2.jwtToken}`);
+
+      await assertConnected(client1);
+      await assertConnected(client2);
+
+      // Wait a moment for initial connections to settle to avoid confusing initial state events with room switching events
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const user2JoinedNewRoomPromise = assertOnEvent<UserStatePayload>(
+        client1,
+        'user_connected',
+      );
+      const user2CurrentStateNewRoomPromise = assertOnEvent<UserStatePayload[]>(
+        client2,
+        'current_state',
+      );
+
+      // User 2 joins the active session dynamically!
+      // This will trigger 'session.joined' event for user2.
+      await sessionsService.join(session.id, userInfo2.userId);
+
+      // Client 1 (who is in the session) should see user 2 connect
+      const newlyConnectedUser = await user2JoinedNewRoomPromise;
+      expect(newlyConnectedUser.userId).toBe(userInfo2.userId);
+
+      // Client 2 should receive the whole room state for the new session
+      const newStateForUser2 = await user2CurrentStateNewRoomPromise;
+      // It should include user1 and user2
+      expect(newStateForUser2).toHaveLength(2);
+      expect(newStateForUser2.some((u) => u.userId === userInfo1.userId)).toBe(
+        true,
+      );
+      expect(newStateForUser2.some((u) => u.userId === userInfo2.userId)).toBe(
+        true,
+      );
+
+      // Now User 2 leaves the session dynamically!
+      // This will trigger 'session.left' event for user2.
+      const user2DisconnectedFromSessionPromise = assertOnEvent<string>(
+        client1,
+        'user_disconnected',
+      );
+      const user2CurrentStateCommonRoomPromise = assertOnEvent<
+        UserStatePayload[]
+      >(client2, 'current_state');
+
+      await sessionsService.leave(session.id, userInfo2.userId);
+
+      // Client 1 should see user 2 disconnect from the session
+      const userLeftSessionId = await user2DisconnectedFromSessionPromise;
+      expect(userLeftSessionId).toBe(userInfo2.userId);
+
+      // Client 2 should receive the state of COMMON_AREA_ID again
+      const finalStateForUser2 = await user2CurrentStateCommonRoomPromise;
+      // Should definitely include user2, but no longer user1
+      expect(
+        finalStateForUser2.find((u) => u.userId === userInfo1.userId),
+      ).toBeUndefined();
+      expect(
+        finalStateForUser2.find((u) => u.userId === userInfo2.userId),
+      ).toBeDefined();
+
+      client1.disconnect();
+      client2.disconnect();
     });
   });
 });
