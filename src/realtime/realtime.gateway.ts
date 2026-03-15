@@ -1,4 +1,4 @@
-import { UseGuards } from '@nestjs/common';
+import { ConflictException, UseGuards } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -70,7 +70,9 @@ export class RealtimeGateway
 
       const existingSocket = this.userSockets.get(userId);
       if (existingSocket) {
-        existingSocket.disconnect();
+        throw new ConflictException(
+          `User ${userId} already has an active socket connection`,
+        );
       }
       this.userSockets.set(userId, client);
 
