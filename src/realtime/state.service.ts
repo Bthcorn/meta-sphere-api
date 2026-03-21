@@ -8,8 +8,8 @@ export class StateService {
   private connections: Map<ConnectionID, UserState> = new Map();
   private connnectionsByRoom: Map<string, Set<ConnectionID>> = new Map();
 
-  newConnection(connection: ConnectionID, userId: UserID, roomId: string) {
-    const userState = new UserState(userId, roomId);
+  newConnection(connection: ConnectionID, userId: UserID, username: string, roomId: string) {
+    const userState = new UserState(userId, username, roomId);
 
     this.connections.set(connection, userState);
 

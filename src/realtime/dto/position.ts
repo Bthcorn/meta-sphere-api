@@ -1,4 +1,4 @@
-import { IsNumber } from 'class-validator';
+import { IsNumber, IsOptional } from 'class-validator';
 
 export class Position {
   @IsNumber()
@@ -9,4 +9,9 @@ export class Position {
 
   @IsNumber()
   z: number;
+
+  /** Y-axis rotation (yaw) in radians — the direction the avatar is facing. */
+  @IsOptional()
+  @IsNumber()
+  rotationY?: number;
 }
