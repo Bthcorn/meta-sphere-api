@@ -1,4 +1,4 @@
-import { ConflictException, UseGuards } from '@nestjs/common';
+import { UseGuards } from '@nestjs/common';
 import {
   WebSocketGateway,
   WebSocketServer,
@@ -52,10 +52,25 @@ export class RealtimeGateway
     }
 
     try {
-      const payload = this.jwtService.verify<{ sub: string }>(token, {
+      const payload = this.jwtService.verify<{ sub: string; username: string }>(token, {
         secret: this.jwtSecret,
       });
       const userId = payload.sub;
+      const username = payload.username ?? userId;
+
+      // If this user already has an active connection (e.g. page refresh or race
+      // between disconnect and reconnect), gracefully take over: clean up the old
+      // socket so the new one can proceed without being rejected.
+      const existingSocket = this.userSockets.get(userId);
+      if (existingSocket && existingSocket.id !== client.id) {
+        try {
+          this.stateService.disconnect(existingSocket.id);
+        } catch {
+          // state may already be gone if the old disconnect was processed first
+        }
+        this.userSockets.delete(userId);
+        existingSocket.disconnect(true);
+      }
 
       let roomId = COMMON_AREA_ID;
       const activeSession =
@@ -65,15 +80,8 @@ export class RealtimeGateway
         roomId = activeSession.id;
       }
 
-      this.stateService.newConnection(client.id, userId, roomId);
+      this.stateService.newConnection(client.id, userId, username, roomId);
       await client.join(roomId);
-
-      const existingSocket = this.userSockets.get(userId);
-      if (existingSocket) {
-        throw new ConflictException(
-          `User ${userId} already has an active socket connection`,
-        );
-      }
       this.userSockets.set(userId, client);
 
       client.emit('current_state', this.stateService.getAllStates(roomId));
@@ -146,6 +154,18 @@ export class RealtimeGateway
       socket.to(newRoomId).emit('user_connected', state.asPayload());
     } catch {
       // Ignored
+    }
+  }
+
+  /** Client can request a fresh presence snapshot without reconnecting. */
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('request_state')
+  handleRequestState(@ConnectedSocket() client: Socket): void {
+    try {
+      const state = this.stateService.getUserState(client.id);
+      client.emit('current_state', this.stateService.getAllStates(state.currentUserRoom));
+    } catch {
+      // state not found — ignore
     }
   }
 

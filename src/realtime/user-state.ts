@@ -4,6 +4,7 @@ export type UserID = string;
 
 export interface UserStatePayload {
   userId: UserID;
+  username: string;
   roomId: string;
   position: Position;
 }
@@ -12,13 +13,15 @@ export interface UserStatePayload {
 const UPDATE_INTERVAL_MS = 50;
 
 export class UserState {
-  private position: Position = { x: 0, y: 0, z: 0 };
+  private position: Position = { x: 0, y: 0, z: 0, rotationY: 0 };
   private userId: UserID;
+  private username: string;
   private roomId: string;
   private latestUpdate: Date = new Date();
 
-  constructor(userId: UserID, roomId: string = 'common_area') {
+  constructor(userId: UserID, username: string, roomId: string = 'common_area') {
     this.userId = userId;
+    this.username = username;
     this.roomId = roomId;
     this.latestUpdate = new Date();
   }
@@ -34,6 +37,7 @@ export class UserState {
   asPayload(): UserStatePayload {
     return {
       userId: this.userId,
+      username: this.username,
       roomId: this.roomId,
       position: this.position,
     };
