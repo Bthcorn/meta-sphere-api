@@ -42,12 +42,9 @@ export class SessionsService {
     }
   }
 
-  private stripPassword<T extends { password?: string | null }>(
-    obj: T,
-  ): Omit<T, 'password'> {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...rest } = obj;
-    return rest;
+  private stripPassword<T extends { password?: string | null }>(session: T) {
+    const { password, ...rest } = session;
+    return { ...rest, hasPassword: !!password };
   }
 
   private async writeLog(
@@ -110,6 +107,11 @@ export class SessionsService {
         userId: hostId,
         role: ParticipantRole.HOST,
       },
+    });
+
+    this.eventEmitter.emit('session.joined', {
+      userId: hostId,
+      sessionId: session.id,
     });
 
     return this.stripPassword(session);
@@ -199,6 +201,7 @@ export class SessionsService {
     });
 
     await this.writeLog(id, SessionEventType.SESSION_ENDED, userId);
+    this.eventEmitter.emit('session.ended', { sessionId: id });
     return this.stripPassword(updated);
   }
 
@@ -217,6 +220,7 @@ export class SessionsService {
     });
 
     if (existing?.status === ParticipantStatus.ACTIVE) {
+      this.eventEmitter.emit('session.joined', { userId, sessionId: id });
       return { message: 'Already in session' };
     }
 
@@ -267,6 +271,13 @@ export class SessionsService {
       throw new BadRequestException(
         'Host cannot leave — end the session instead',
       );
+    }
+
+    if (
+      session.status === SessionStatus.ENDED ||
+      session.status === SessionStatus.CANCELLED
+    ) {
+      return { message: 'Session has already ended' };
     }
 
     const participant = await this.prisma.sessionParticipant.findUnique({

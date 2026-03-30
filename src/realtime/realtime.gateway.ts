@@ -52,9 +52,12 @@ export class RealtimeGateway
     }
 
     try {
-      const payload = this.jwtService.verify<{ sub: string; username: string }>(token, {
-        secret: this.jwtSecret,
-      });
+      const payload = this.jwtService.verify<{ sub: string; username: string }>(
+        token,
+        {
+          secret: this.jwtSecret,
+        },
+      );
       const userId = payload.sub;
       const username = payload.username ?? userId;
 
@@ -163,7 +166,10 @@ export class RealtimeGateway
   handleRequestState(@ConnectedSocket() client: Socket): void {
     try {
       const state = this.stateService.getUserState(client.id);
-      client.emit('current_state', this.stateService.getAllStates(state.currentUserRoom));
+      client.emit(
+        'current_state',
+        this.stateService.getAllStates(state.currentUserRoom),
+      );
     } catch {
       // state not found — ignore
     }
@@ -179,6 +185,21 @@ export class RealtimeGateway
     if (shouldUpdate) {
       const state = this.stateService.getUserState(client.id);
       client.to(state.currentUserRoom).emit('user_moved', state.asPayload());
+    }
+  }
+
+  @OnEvent('session.ended')
+  async handleSessionEnded(payload: { sessionId: string }): Promise<void> {
+    const { sessionId } = payload;
+
+    // Tell all clients in this session room that it ended
+    // This fires BEFORE we move them, so the client receives it while still subscribed
+    this.server.to(sessionId).emit('session:ended', { sessionId });
+
+    // Move every socket in this room back to common area
+    const usersInRoom = this.stateService.getAllStates(sessionId);
+    for (const userState of usersInRoom) {
+      await this.switchUserRoom(userState.userId, COMMON_AREA_ID);
     }
   }
 }
