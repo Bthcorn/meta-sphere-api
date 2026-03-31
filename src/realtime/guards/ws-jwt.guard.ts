@@ -25,8 +25,7 @@ export class WsJwtGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const client = context.switchToWs().getClient<Socket>();
-    const token =
-      client.handshake.query?.token ?? client.handshake.auth?.token;
+    const token = client.handshake.query?.token ?? client.handshake.auth?.token;
 
     if (typeof token !== 'string') {
       throw new WsException('Authentication token missing');

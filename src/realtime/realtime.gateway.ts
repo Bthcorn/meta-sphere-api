@@ -144,7 +144,11 @@ export class RealtimeGateway
       if (oldRoom === newRoomId) return;
 
       await socket.leave(oldRoom);
+      await socket.leave(`session:${oldRoom}`);
+
       await socket.join(newRoomId);
+      await socket.join(`session:${newRoomId}`);
+
       this.stateService.changeRoom(socket.id, newRoomId);
 
       // Notify old room

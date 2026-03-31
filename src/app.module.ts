@@ -20,6 +20,7 @@ import JwtAccessGuard from './auth/decorator/jwt-access-auth.guard';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { LiveKitModule } from './livekit/livekit.module';
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { LiveKitModule } from './livekit/livekit.module';
     RealtimeModule,
     WhiteboardModule,
     LiveKitModule,
+    ChatModule,
   ],
   controllers: [AppController],
   providers: [
