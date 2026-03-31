@@ -62,7 +62,9 @@ export class SessionsController {
   }
 
   @Patch(':id')
-  @ApiOperation({ summary: 'Update session (title, description, lock) — host only' })
+  @ApiOperation({
+    summary: 'Update session (title, description, lock) — host only',
+  })
   @ApiResponse({ status: 200, description: 'Session updated.' })
   @ApiResponse({ status: 403, description: 'Not the host.' })
   @ApiResponse({ status: 404, description: 'Session not found.' })
@@ -80,7 +82,10 @@ export class SessionsController {
   @ApiOperation({ summary: 'Host starts the session' })
   @ApiResponse({ status: 200, description: 'Session started.' })
   @ApiResponse({ status: 403, description: 'Not the host.' })
-  @ApiResponse({ status: 409, description: 'Session is not in SCHEDULED state.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Session is not in SCHEDULED state.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   start(@Param('id') id: string, @CurrentUser() user: JwtUser) {
     return this.sessionsService.start(id, user.userId);
@@ -155,5 +160,26 @@ export class SessionsController {
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   getLogs(@Param('id') id: string) {
     return this.sessionsService.getLogs(id);
+  }
+
+  @Post(':id/voice-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Generate a LiveKit voice token for this session' })
+  @ApiResponse({
+    status: 200,
+    description: 'Token generated.',
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        url: { type: 'string' },
+      },
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Not an active participant.' })
+  @ApiResponse({ status: 409, description: 'Session is not active.' })
+  @ApiResponse({ status: 401, description: 'Unauthorized.' })
+  generateVoiceToken(@Param('id') id: string, @CurrentUser() user: JwtUser) {
+    return this.sessionsService.generateVoiceToken(id, user.userId);
   }
 }

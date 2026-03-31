@@ -18,12 +18,14 @@ import {
 import { CreateSessionDto } from './dto/create-session.dto';
 import { UpdateSessionDto } from './dto/update-session.dto';
 import { ListSessionsDto } from './dto/list-sessions.dto';
+import { LiveKitService } from 'src/livekit/livekit.service';
 
 @Injectable()
 export class SessionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly liveKit: LiveKitService,
   ) {}
 
   // ── Internal helpers ──────────────────────────────────────────────────
@@ -201,6 +203,10 @@ export class SessionsService {
     });
 
     await this.writeLog(id, SessionEventType.SESSION_ENDED, userId);
+
+    // Attempt to terminate the active LiveKit room
+    await this.liveKit.deleteRoom(id);
+
     this.eventEmitter.emit('session.ended', { sessionId: id });
     return this.stripPassword(updated);
   }
@@ -382,5 +388,41 @@ export class SessionsService {
     }
 
     return activeParticipation.session;
+  }
+
+  async generateVoiceToken(sessionId: string, userId: string) {
+    const session = await this.getSession(sessionId);
+
+    // Verify user is an active participant in this session
+    const participant = await this.prisma.sessionParticipant.findUnique({
+      where: { sessionId_userId: { sessionId, userId } },
+      include: { user: true },
+    });
+
+    if (!participant || participant.status !== ParticipantStatus.ACTIVE) {
+      throw new ForbiddenException(
+        'You must be an active participant to join the voice room',
+      );
+    }
+
+    if (session.status !== SessionStatus.ACTIVE) {
+      throw new ConflictException('Session is not active');
+    }
+
+    const isHost = participant.role === ParticipantRole.HOST;
+    const displayName =
+      `${participant.user.firstName} ${participant.user.lastName}`.trim() ||
+      participant.user.username;
+
+    const token = await this.liveKit.createToken(
+      userId,
+      displayName,
+      sessionId,
+      isHost,
+    );
+
+    const url = this.liveKit.getLiveKitUrl();
+
+    return { token, url };
   }
 }

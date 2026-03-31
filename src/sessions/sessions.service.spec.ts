@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { SessionsService } from './sessions.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { LiveKitService } from 'src/livekit/livekit.service';
 import {
   SessionStatus,
   SessionType,
@@ -84,6 +85,13 @@ const mockPrisma = {
   },
 };
 
+// ── Mock LiveKitService ──────────────────────────────────────────────────────
+const mockLiveKit = {
+  createToken: jest.fn().mockResolvedValue('mock-token'),
+  deleteRoom: jest.fn().mockResolvedValue(undefined),
+  getLiveKitUrl: jest.fn().mockReturnValue('mock-url'),
+};
+
 // ── Suite ────────────────────────────────────────────────────────────────────
 
 describe('SessionsService', () => {
@@ -95,6 +103,7 @@ describe('SessionsService', () => {
         SessionsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        { provide: LiveKitService, useValue: mockLiveKit },
       ],
     }).compile();
 

@@ -18,7 +18,7 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "NODE_OPTIONS='--experimental-vm-modules' jest --config ./test/jest-e2e.json --detectOpenHandles"
+    "test:e2e": "NODE_OPTIONS='--experimental-vm-modules' jest --config ./test/jest-e2e.json --detectOpenHandles --forceExit"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.12",
@@ -38,6 +38,7 @@
     "class-validator": "^0.14.3",
     "dotenv": "^17.3.1",
     "ioredis": "^5.9.3",
+    "livekit-server-sdk": "^2.15.0",
     "meta-sphere-api": "link:",
     "minio": "^8.0.6",
     "multer": "^2.0.2",
@@ -53,6 +54,7 @@
     "@nestjs/cli": "^11.0.16",
     "@nestjs/schematics": "^11.0.9",
     "@nestjs/testing": "^11.1.12",
+    "@roamhq/wrtc": "^0.10.0",
     "@testcontainers/postgresql": "^11.12.0",
     "@testcontainers/redis": "^11.12.0",
     "@types/bcrypt": "^6.0.0",
@@ -66,6 +68,8 @@
     "eslint-plugin-prettier": "^5.5.5",
     "globals": "^16.5.0",
     "jest": "^30.2.0",
+    "livekit-client": "^2.18.0",
+    "node-fetch": "^3.3.2",
     "prettier": "^3.8.1",
     "prisma": "^7.3.0",
     "socket.io-client": "^4.7.2",
@@ -78,7 +82,8 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.54.0"
+    "typescript-eslint": "^8.54.0",
+    "ws": "^8.20.0"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

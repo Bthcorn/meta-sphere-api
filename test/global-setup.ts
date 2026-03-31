@@ -24,6 +24,9 @@ export default async function globalSetup(): Promise<void> {
     process.env.MINIO_SECRET_KEY = env.MINIO_SECRET_KEY;
     process.env.MINIO_USE_SSL = env.MINIO_USE_SSL;
     process.env.MINIO_BUCKET = env.MINIO_BUCKET;
+    process.env.LIVEKIT_API_KEY = env.LIVEKIT_API_KEY;
+    process.env.LIVEKIT_API_SECRET = env.LIVEKIT_API_SECRET;
+    process.env.LIVEKIT_URL = env.LIVEKIT_URL;
     process.env.JWT_ACCESS_TOKEN_SECRET = 'test-jwt-secret';
     process.env.JWT_EXPIRES_IN = '1h';
 
