@@ -112,8 +112,8 @@ describe('RealtimeGateway (e2e)', () => {
     await app.listen(0); // Listen on a random available port
     const httpServer = app.getHttpServer();
 
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
-    const addressInfo = httpServer.address();
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    const addressInfo = (httpServer as any).address();
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const port =
