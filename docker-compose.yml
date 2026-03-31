@@ -130,11 +130,6 @@ services:
       "
     restart: 'no' # intentionally run once and exit
 
-volumes:
-  postgres_data:
-  redis_data:
-  minio_data:
-
   livekit:
     image: livekit/livekit-server:latest
     container_name: meta-sphere-livekit
@@ -147,4 +142,9 @@ volumes:
       redis:
         condition: service_healthy
     restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
 
