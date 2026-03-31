@@ -15,6 +15,7 @@ global.RTCSessionDescription = wrtc.RTCSessionDescription;
 global.RTCRtpTransceiver = wrtc.RTCRtpTransceiver;
 global.RTCRtpSender = wrtc.RTCRtpSender;
 global.RTCRtpReceiver = wrtc.RTCRtpReceiver;
+global.navigator = { userAgent: 'node' } as any;
 
 describe('Sessions Voice Chat (e2e)', () => {
   let app: INestApplication;
