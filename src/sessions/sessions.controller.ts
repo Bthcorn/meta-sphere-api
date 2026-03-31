@@ -165,7 +165,17 @@ export class SessionsController {
   @Post(':id/voice-token')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Generate a LiveKit voice token for this session' })
-  @ApiResponse({ status: 200, description: 'Token generated.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Token generated.',
+    schema: {
+      type: 'object',
+      properties: {
+        token: { type: 'string' },
+        url: { type: 'string' },
+      },
+    },
+  })
   @ApiResponse({ status: 403, description: 'Not an active participant.' })
   @ApiResponse({ status: 409, description: 'Session is not active.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })

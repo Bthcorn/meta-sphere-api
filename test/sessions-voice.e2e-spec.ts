@@ -135,11 +135,12 @@ describe('Sessions Voice Chat (e2e)', () => {
       .set('Authorization', `Bearer ${hostAuth.access_token}`)
       .expect(200);
 
-    const token = tokenRes.body.token;
+    const token = tokenRes.body.token as string;
+    const livekitUrl = tokenRes.body.url as string;
     expect(token).toBeDefined();
+    expect(livekitUrl).toBeDefined();
 
     // 5. Verify token against ephemeral LiveKit server
-    const livekitUrl = process.env.LIVEKIT_URL || '';
     const wsUrl = livekitUrl.replace('http:', 'ws:').replace('https:', 'wss:');
     const room = new Room();
 

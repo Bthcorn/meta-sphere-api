@@ -17,6 +17,10 @@ export class LiveKitService implements OnModuleInit {
     this.roomService = new RoomServiceClient(url, apiKey, secret);
   }
 
+  getLiveKitUrl(): string {
+    return this.configService.getOrThrow<string>('LIVEKIT_URL');
+  }
+
   async createToken(
     userId: string,
     name: string | null,
@@ -46,11 +50,11 @@ export class LiveKitService implements OnModuleInit {
     try {
       await this.roomService.deleteRoom(sessionId);
       this.logger.log(`LiveKit room ${sessionId} deleted`);
-    } catch (e: any) {
-      if (e?.response?.status !== 404 && e?.status !== 404) {
+    } catch (e: unknown) {
+      if ((e as any)?.response?.status !== 404 && (e as any)?.status !== 404) {
         this.logger.error(
-          `Failed to delete room ${sessionId}: ${e.message}`,
-          e.stack,
+          `Failed to delete room ${sessionId}: ${(e as Error).message}`,
+          (e as Error).stack,
         );
       }
     }
