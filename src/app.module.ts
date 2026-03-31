@@ -19,6 +19,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import JwtAccessGuard from './auth/decorator/jwt-access-auth.guard';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
+import { LiveKitModule } from './livekit/livekit.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { WhiteboardModule } from './whiteboard/whiteboard.module';
     FriendsModule,
     RealtimeModule,
     WhiteboardModule,
+    LiveKitModule,
   ],
   controllers: [AppController],
   providers: [
