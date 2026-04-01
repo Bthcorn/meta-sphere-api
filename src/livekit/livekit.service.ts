@@ -21,6 +21,18 @@ export class LiveKitService implements OnModuleInit {
     return this.configService.getOrThrow<string>('LIVEKIT_URL');
   }
 
+  /**
+   * The URL sent to browser clients so they can connect via WebSocket.
+   * Must be reachable from the user's machine — not a Docker-internal hostname.
+   * Defaults to LIVEKIT_URL if LIVEKIT_PUBLIC_URL is not set.
+   */
+  getLiveKitPublicUrl(): string {
+    return (
+      this.configService.get<string>('LIVEKIT_PUBLIC_URL') ??
+      this.configService.getOrThrow<string>('LIVEKIT_URL')
+    );
+  }
+
   async createToken(
     userId: string,
     name: string | null,
