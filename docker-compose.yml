@@ -143,7 +143,7 @@ services:
       - '7880:7880'
       - '7881:7881'
       - '7882:7882/udp'
-    command: --dev --bind 0.0.0.0 --redis-host redis:6379 --redis-password ""
+    command: --dev --bind 0.0.0.0 --node-ip 127.0.0.1 --redis-host redis:6379 --redis-password ""
     depends_on:
       redis:
         condition: service_healthy
