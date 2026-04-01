@@ -1,181 +1,158 @@
-import {
-  Injectable,
-  NotFoundException,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { MessageType } from 'src/generated/prisma/client';
-import { CreateMessageDto } from './dto/create-message.dto';
-import { UpdateMessageDto } from './dto/update-message.dto';
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
+import { RedisService } from '../redis/redis.service';
 
-const MESSAGE_SELECT = {
+const MSG_SELECT = {
   id: true,
   content: true,
   type: true,
   reactions: true,
-  isEdited: true,
   isDeleted: true,
   createdAt: true,
-  updatedAt: true,
   roomId: true,
-  senderId: true,
-  recipientId: true,
+  sessionId: true,
   sender: {
-    select: {
-      id: true,
-      username: true,
-      firstName: true,
-      lastName: true,
-      profilePicture: true,
-      avatarPreset: true,
-    },
+    select: { id: true, username: true, avatarPreset: true },
   },
-} as const;
+};
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly redis: RedisService,
+  ) {}
 
-  async getRoomMessages(roomId: string, limit = 100, cursor?: string) {
-    const room = await this.prisma.room.findUnique({ where: { id: roomId } });
-    if (!room || !room.isActive) throw new NotFoundException('Room not found');
-
+  // ── Room messages (Chilling, Library) ──────────────────────────────────────
+  async getRoomMessages(roomId: string, limit = 50, before?: string) {
     return this.prisma.message.findMany({
       where: {
         roomId,
-        ...(cursor && { createdAt: { lt: new Date(cursor) } }),
+        sessionId: null, // room-only, never session messages
+        isDeleted: false,
+        ...(before && { createdAt: { lt: new Date(before) } }),
       },
-      select: MESSAGE_SELECT,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       take: limit,
+      select: MSG_SELECT,
     });
   }
 
-  async getDirectMessages(
-    currentUserId: string,
-    otherUserId: string,
-    limit = 100,
-    cursor?: string,
-  ) {
-    const otherUser = await this.prisma.user.findUnique({
-      where: { id: otherUserId },
-    });
-    if (!otherUser) throw new NotFoundException('User not found');
-
+  // ── Session messages (Meeting, Lecture) ────────────────────────────────────
+  async getSessionMessages(sessionId: string, limit = 100, before?: string) {
     return this.prisma.message.findMany({
       where: {
-        roomId: null,
-        OR: [
-          { senderId: currentUserId, recipientId: otherUserId },
-          { senderId: otherUserId, recipientId: currentUserId },
-        ],
-        ...(cursor && { createdAt: { lt: new Date(cursor) } }),
+        sessionId,
+        isDeleted: false,
+        ...(before && { createdAt: { lt: new Date(before) } }),
       },
-      select: MESSAGE_SELECT,
-      orderBy: { createdAt: 'desc' },
+      orderBy: { createdAt: 'asc' },
       take: limit,
+      select: MSG_SELECT,
     });
   }
 
-  async send(senderId: string, dto: CreateMessageDto) {
-    if (!dto.roomId && !dto.recipientId) {
-      throw new BadRequestException(
-        'Either roomId or recipientId must be provided',
-      );
-    }
-    if (dto.roomId && dto.recipientId) {
-      throw new BadRequestException(
-        'Provide either roomId or recipientId, not both',
-      );
-    }
-
-    if (dto.roomId) {
-      const room = await this.prisma.room.findUnique({
-        where: { id: dto.roomId },
-      });
-      if (!room || !room.isActive) throw new NotFoundException('Room not found');
-    }
-
-    if (dto.recipientId) {
-      if (dto.recipientId === senderId) {
-        throw new BadRequestException('Cannot send a message to yourself');
-      }
-      const recipient = await this.prisma.user.findUnique({
-        where: { id: dto.recipientId },
-      });
-      if (!recipient) throw new NotFoundException('Recipient not found');
-    }
-
-    return this.prisma.message.create({
+  // ── Persist a new message ──────────────────────────────────────────────────
+  async createMessage(data: {
+    content: string;
+    senderId: string;
+    roomId: string;
+    sessionId?: string;
+  }) {
+    const message = await this.prisma.message.create({
       data: {
-        senderId,
-        content: dto.content,
-        type: dto.type ?? MessageType.TEXT,
-        roomId: dto.roomId ?? null,
-        recipientId: dto.recipientId ?? null,
+        content: data.content,
+        senderId: data.senderId,
+        roomId: data.roomId,
+        sessionId: data.sessionId ?? null,
       },
-      select: MESSAGE_SELECT,
+      select: MSG_SELECT,
+    });
+
+    // Cache in Redis for fast replay on join
+    const cacheKey = data.sessionId
+      ? `chat:session:${data.sessionId}`
+      : `chat:room:${data.roomId}`;
+
+    await this.redis.lpush(cacheKey, JSON.stringify(message));
+    await this.redis.ltrim(cacheKey, 0, 99); // keep last 100
+
+    return message;
+  }
+
+  // ── Soft-delete ────────────────────────────────────────────────────────────
+  async softDelete(messageId: string, requesterId: string) {
+    return this.prisma.message.updateMany({
+      where: { id: messageId, senderId: requesterId },
+      data: { isDeleted: true },
     });
   }
 
-  async edit(messageId: string, userId: string, dto: UpdateMessageDto) {
-    const message = await this.prisma.message.findUnique({
+  // ── Add / toggle reaction ──────────────────────────────────────────────────
+  async toggleReaction(messageId: string, userId: string, emoji: string) {
+    const message = await this.prisma.message.findUniqueOrThrow({
       where: { id: messageId },
+      select: { reactions: true, roomId: true, sessionId: true },
     });
-    if (!message) throw new NotFoundException('Message not found');
-    if (message.senderId !== userId) {
-      throw new ForbiddenException('You can only edit your own messages');
-    }
-    if (message.isDeleted) {
-      throw new BadRequestException('Cannot edit a deleted message');
-    }
+
+    const reactions = (message.reactions ?? {}) as unknown as Record<
+      string,
+      string[]
+    >;
+    const current = reactions[emoji] ?? [];
+    reactions[emoji] = current.includes(userId)
+      ? current.filter((id) => id !== userId)
+      : [...current, userId];
+
+    // Clean up empty emoji keys
+    if (reactions[emoji].length === 0) delete reactions[emoji];
 
     return this.prisma.message.update({
       where: { id: messageId },
-      data: { content: dto.content, isEdited: true },
-      select: MESSAGE_SELECT,
+      data: { reactions },
+      select: MSG_SELECT,
     });
   }
 
-  async softDelete(messageId: string, userId: string) {
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-    });
-    if (!message) throw new NotFoundException('Message not found');
-    if (message.senderId !== userId) {
-      throw new ForbiddenException('You can only delete your own messages');
-    }
-    if (message.isDeleted) {
-      throw new BadRequestException('Message is already deleted');
-    }
-
-    return this.prisma.message.update({
-      where: { id: messageId },
-      data: { isDeleted: true, content: '[deleted]' },
-      select: MESSAGE_SELECT,
-    });
+  // ── Redis cache helpers ────────────────────────────────────────────────────
+  async getCachedRoomMessages(roomId: string) {
+    const raw = await this.redis.lrange(`chat:room:${roomId}`, 0, 99);
+    return raw.reverse().map((s) => JSON.parse(s));
   }
 
-  async react(messageId: string, userId: string, emoji: string) {
-    const message = await this.prisma.message.findUnique({
-      where: { id: messageId },
-    });
-    if (!message) throw new NotFoundException('Message not found');
-    if (message.isDeleted) {
-      throw new BadRequestException('Cannot react to a deleted message');
-    }
+  async getCachedSessionMessages(sessionId: string) {
+    const raw = await this.redis.lrange(`chat:session:${sessionId}`, 0, 99);
+    return raw.reverse().map((s) => JSON.parse(s));
+  }
 
-    const entry = `${emoji}:${userId}`;
-    const hasReacted = message.reactions.includes(entry);
-    const updatedReactions = hasReacted
-      ? message.reactions.filter((r) => r !== entry)
-      : [...message.reactions, entry];
+  async clearSessionCache(sessionId: string) {
+    await this.redis.del(`chat:session:${sessionId}`);
+  }
 
-    return this.prisma.message.update({
-      where: { id: messageId },
-      data: { reactions: updatedReactions },
-      select: MESSAGE_SELECT,
-    });
+  // ── Typing state via Redis TTL ─────────────────────────────────────────────
+  async setTyping(scope: string, userId: string, username: string) {
+    // scope = "room:{roomId}" or "session:{sessionId}"
+    await this.redis.set(
+      `typing:${scope}:${userId}`,
+      username,
+      'EX',
+      4, // auto-expires in 4 s — no stale indicators
+    );
+  }
+
+  async clearTyping(scope: string, userId: string) {
+    await this.redis.del(`typing:${scope}:${userId}`);
+  }
+
+  async getTypingUsers(
+    scope: string,
+  ): Promise<{ userId: string; username: string }[]> {
+    const keys = await this.redis.keys(`typing:${scope}:*`);
+    if (!keys.length) return [];
+    const names = await this.redis.mget(...keys);
+    return keys.map((key, i) => ({
+      userId: key.split(':').pop()!,
+      username: names[i] ?? 'Unknown',
+    }));
   }
 }

@@ -1,59 +1,48 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import {
-  NotFoundException,
-  ForbiddenException,
-  BadRequestException,
-} from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { MessageType } from 'src/generated/prisma/client';
+import { RedisService } from 'src/redis/redis.service';
 
 // ── Fixtures ─────────────────────────────────────────────────────────────────
-
-const mockRoom = { id: 'room-1', isActive: true };
-const mockUser = { id: 'user-1' };
-const mockOtherUser = { id: 'user-2' };
 
 const mockMessage = {
   id: 'msg-1',
   content: 'Hello world',
-  type: MessageType.TEXT,
-  reactions: [],
-  isEdited: false,
+  type: 'TEXT',
+  reactions: {},
   isDeleted: false,
-  createdAt: new Date(),
-  updatedAt: new Date(),
+  createdAt: new Date('2026-01-01T00:00:00Z'),
   roomId: 'room-1',
-  senderId: 'user-1',
-  recipientId: null,
-  sender: {
-    id: 'user-1',
-    username: 'alice',
-    firstName: 'Alice',
-    lastName: 'Smith',
-    profilePicture: null,
-    avatarPreset: 'avatar1',
-  },
+  sessionId: null,
+  sender: { id: 'user-1', username: 'alice', avatarPreset: 'avatar1' },
 };
 
-const mockDmMessage = {
+const mockSessionMessage = {
   ...mockMessage,
-  id: 'msg-dm-1',
-  roomId: null,
-  recipientId: 'user-2',
+  id: 'msg-2',
+  sessionId: 'session-1',
 };
 
-// ── Mock PrismaService ────────────────────────────────────────────────────────
+// ── Mocks ─────────────────────────────────────────────────────────────────────
 
 const mockPrisma = {
-  room: { findUnique: jest.fn() },
-  user: { findUnique: jest.fn() },
   message: {
-    findUnique: jest.fn(),
     findMany: jest.fn(),
     create: jest.fn(),
+    updateMany: jest.fn(),
+    findUniqueOrThrow: jest.fn(),
     update: jest.fn(),
   },
+};
+
+const mockRedis = {
+  lpush: jest.fn(),
+  ltrim: jest.fn(),
+  lrange: jest.fn(),
+  del: jest.fn(),
+  set: jest.fn(),
+  keys: jest.fn(),
+  mget: jest.fn(),
 };
 
 // ── Suite ─────────────────────────────────────────────────────────────────────
@@ -66,6 +55,7 @@ describe('MessagesService', () => {
       providers: [
         MessagesService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: RedisService, useValue: mockRedis },
       ],
     }).compile();
 
@@ -80,398 +70,355 @@ describe('MessagesService', () => {
   // ── getRoomMessages ───────────────────────────────────────────────────────
 
   describe('getRoomMessages', () => {
-    it('should return messages for a valid active room', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue(mockRoom);
+    it('should query room messages excluding session messages with default limit', async () => {
       mockPrisma.message.findMany.mockResolvedValue([mockMessage]);
 
       const result = await service.getRoomMessages('room-1');
 
-      expect(mockPrisma.room.findUnique).toHaveBeenCalledWith({
-        where: { id: 'room-1' },
-      });
       expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: expect.objectContaining({ roomId: 'room-1' }),
-          orderBy: { createdAt: 'desc' },
-          take: 100,
+          where: { roomId: 'room-1', sessionId: null, isDeleted: false },
+          orderBy: { createdAt: 'asc' },
+          take: 50,
         }),
       );
       expect(result).toHaveLength(1);
     });
 
-    it('should apply cursor filter when cursor is provided', async () => {
-      const cursor = new Date().toISOString();
-      mockPrisma.room.findUnique.mockResolvedValue(mockRoom);
+    it('should apply before cursor when provided', async () => {
+      const before = '2026-01-01T12:00:00Z';
       mockPrisma.message.findMany.mockResolvedValue([]);
 
-      await service.getRoomMessages('room-1', 50, cursor);
+      await service.getRoomMessages('room-1', 20, before);
 
-      const [call] = mockPrisma.message.findMany.mock.calls as [{ where: { createdAt?: object } }][];
-      expect(call[0].where.createdAt).toEqual({ lt: new Date(cursor) });
-      expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ take: 50 }),
-      );
-    });
-
-    it('should throw NotFoundException when room does not exist', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue(null);
-
-      await expect(service.getRoomMessages('bad-room')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw NotFoundException when room is inactive', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue({ ...mockRoom, isActive: false });
-
-      await expect(service.getRoomMessages('room-1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-  });
-
-  // ── getDirectMessages ─────────────────────────────────────────────────────
-
-  describe('getDirectMessages', () => {
-    it('should return DM thread between two users', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockOtherUser);
-      mockPrisma.message.findMany.mockResolvedValue([mockDmMessage]);
-
-      const result = await service.getDirectMessages('user-1', 'user-2');
-
-      expect(mockPrisma.user.findUnique).toHaveBeenCalledWith({
-        where: { id: 'user-2' },
-      });
       expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
-            roomId: null,
-            OR: [
-              { senderId: 'user-1', recipientId: 'user-2' },
-              { senderId: 'user-2', recipientId: 'user-1' },
-            ],
+            createdAt: { lt: new Date(before) },
           }),
-          orderBy: { createdAt: 'desc' },
+          take: 20,
+        }),
+      );
+    });
+
+    it('should not include createdAt filter when before is omitted', async () => {
+      mockPrisma.message.findMany.mockResolvedValue([]);
+
+      await service.getRoomMessages('room-1');
+
+      const [call] = mockPrisma.message.findMany.mock.calls as [
+        { where: Record<string, unknown> },
+      ][];
+      expect(call[0].where.createdAt).toBeUndefined();
+    });
+  });
+
+  // ── getSessionMessages ────────────────────────────────────────────────────
+
+  describe('getSessionMessages', () => {
+    it('should query session messages with default limit of 100', async () => {
+      mockPrisma.message.findMany.mockResolvedValue([mockSessionMessage]);
+
+      const result = await service.getSessionMessages('session-1');
+
+      expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sessionId: 'session-1', isDeleted: false },
+          orderBy: { createdAt: 'asc' },
           take: 100,
         }),
       );
       expect(result).toHaveLength(1);
     });
 
-    it('should apply cursor filter when provided', async () => {
-      const cursor = new Date().toISOString();
-      mockPrisma.user.findUnique.mockResolvedValue(mockOtherUser);
+    it('should apply before cursor and custom limit when provided', async () => {
+      const before = '2026-01-01T12:00:00Z';
       mockPrisma.message.findMany.mockResolvedValue([]);
 
-      await service.getDirectMessages('user-1', 'user-2', 20, cursor);
+      await service.getSessionMessages('session-1', 30, before);
 
-      const [call] = mockPrisma.message.findMany.mock.calls as [{ where: { createdAt?: object }; take: number }][];
-      expect(call[0].where.createdAt).toEqual({ lt: new Date(cursor) });
-      expect(call[0].take).toBe(20);
-    });
-
-    it('should throw NotFoundException when other user does not exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.getDirectMessages('user-1', 'ghost-user'),
-      ).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            createdAt: { lt: new Date(before) },
+          }),
+          take: 30,
+        }),
+      );
     });
   });
 
-  // ── send ─────────────────────────────────────────────────────────────────
+  // ── createMessage ─────────────────────────────────────────────────────────
 
-  describe('send', () => {
-    it('should send a room message', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue(mockRoom);
+  describe('createMessage', () => {
+    it('should persist a room message and cache it under the room key', async () => {
       mockPrisma.message.create.mockResolvedValue(mockMessage);
+      mockRedis.lpush.mockResolvedValue(1);
+      mockRedis.ltrim.mockResolvedValue('OK');
 
-      const result = await service.send('user-1', {
+      const result = await service.createMessage({
         content: 'Hello world',
+        senderId: 'user-1',
         roomId: 'room-1',
       });
 
       expect(mockPrisma.message.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
-            senderId: 'user-1',
             content: 'Hello world',
-            roomId: 'room-1',
-            recipientId: null,
-            type: MessageType.TEXT,
-          }),
-        }),
-      );
-      expect(result.content).toBe('Hello world');
-    });
-
-    it('should send a direct message', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(mockOtherUser);
-      mockPrisma.message.create.mockResolvedValue(mockDmMessage);
-
-      const result = await service.send('user-1', {
-        content: 'Hey!',
-        recipientId: 'user-2',
-      });
-
-      expect(mockPrisma.message.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({
             senderId: 'user-1',
-            recipientId: 'user-2',
-            roomId: null,
+            roomId: 'room-1',
+            sessionId: null,
           }),
         }),
       );
-      expect(result.recipientId).toBe('user-2');
-    });
-
-    it('should use the provided MessageType', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue(mockRoom);
-      mockPrisma.message.create.mockResolvedValue({
-        ...mockMessage,
-        type: MessageType.FILE,
-      });
-
-      await service.send('user-1', {
-        content: 'See attached',
-        roomId: 'room-1',
-        type: MessageType.FILE,
-      });
-
-      const [call] = mockPrisma.message.create.mock.calls as [{ data: { type: MessageType } }][];
-      expect(call[0].data.type).toBe(MessageType.FILE);
-    });
-
-    it('should throw BadRequestException when both roomId and recipientId are missing', async () => {
-      await expect(
-        service.send('user-1', { content: 'oops' }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException when both roomId and recipientId are set', async () => {
-      await expect(
-        service.send('user-1', {
-          content: 'oops',
-          roomId: 'room-1',
-          recipientId: 'user-2',
-        }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw BadRequestException when sender tries to message themselves', async () => {
-      await expect(
-        service.send('user-1', { content: 'hi me', recipientId: 'user-1' }),
-      ).rejects.toThrow(BadRequestException);
-    });
-
-    it('should throw NotFoundException when room does not exist', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.send('user-1', { content: 'hi', roomId: 'bad-room' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw NotFoundException when room is inactive', async () => {
-      mockPrisma.room.findUnique.mockResolvedValue({ ...mockRoom, isActive: false });
-
-      await expect(
-        service.send('user-1', { content: 'hi', roomId: 'room-1' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw NotFoundException when recipient does not exist', async () => {
-      mockPrisma.user.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.send('user-1', { content: 'hi', recipientId: 'ghost' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-  });
-
-  // ── edit ─────────────────────────────────────────────────────────────────
-
-  describe('edit', () => {
-    it('should edit own message and set isEdited to true', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(mockMessage);
-      mockPrisma.message.update.mockResolvedValue({
-        ...mockMessage,
-        content: 'Updated!',
-        isEdited: true,
-      });
-
-      const result = await service.edit('msg-1', 'user-1', {
-        content: 'Updated!',
-      });
-
-      expect(mockPrisma.message.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'msg-1' },
-          data: { content: 'Updated!', isEdited: true },
-        }),
+      expect(mockRedis.lpush).toHaveBeenCalledWith(
+        'chat:room:room-1',
+        JSON.stringify(mockMessage),
       );
-      expect(result.isEdited).toBe(true);
-      expect(result.content).toBe('Updated!');
+      expect(mockRedis.ltrim).toHaveBeenCalledWith('chat:room:room-1', 0, 99);
+      expect(result).toEqual(mockMessage);
     });
 
-    it('should throw NotFoundException when message does not exist', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(null);
+    it('should cache under the session key when sessionId is provided', async () => {
+      mockPrisma.message.create.mockResolvedValue(mockSessionMessage);
+      mockRedis.lpush.mockResolvedValue(1);
+      mockRedis.ltrim.mockResolvedValue('OK');
 
-      await expect(
-        service.edit('bad-id', 'user-1', { content: 'hi' }),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('should throw ForbiddenException when caller is not the sender', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(mockMessage);
-
-      await expect(
-        service.edit('msg-1', 'user-other', { content: 'hijack' }),
-      ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('should throw BadRequestException when message is already deleted', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue({
-        ...mockMessage,
-        isDeleted: true,
+      await service.createMessage({
+        content: 'Hello',
+        senderId: 'user-1',
+        roomId: 'room-1',
+        sessionId: 'session-1',
       });
 
-      await expect(
-        service.edit('msg-1', 'user-1', { content: 'too late' }),
-      ).rejects.toThrow(BadRequestException);
+      expect(mockRedis.lpush).toHaveBeenCalledWith(
+        'chat:session:session-1',
+        expect.any(String),
+      );
+      expect(mockRedis.ltrim).toHaveBeenCalledWith(
+        'chat:session:session-1',
+        0,
+        99,
+      );
     });
   });
 
   // ── softDelete ────────────────────────────────────────────────────────────
 
   describe('softDelete', () => {
-    it('should soft-delete own message and replace content with [deleted]', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(mockMessage);
+    it('should call updateMany scoped to id and senderId', async () => {
+      mockPrisma.message.updateMany.mockResolvedValue({ count: 1 });
+
+      await service.softDelete('msg-1', 'user-1');
+
+      expect(mockPrisma.message.updateMany).toHaveBeenCalledWith({
+        where: { id: 'msg-1', senderId: 'user-1' },
+        data: { isDeleted: true },
+      });
+    });
+
+    it('should return count 0 when message is not found or not owned', async () => {
+      mockPrisma.message.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await service.softDelete('msg-1', 'other-user');
+
+      expect(result).toEqual({ count: 0 });
+    });
+  });
+
+  // ── toggleReaction ────────────────────────────────────────────────────────
+
+  describe('toggleReaction', () => {
+    it('should add a reaction when user has not reacted yet', async () => {
+      mockPrisma.message.findUniqueOrThrow.mockResolvedValue({
+        reactions: {},
+        roomId: 'room-1',
+        sessionId: null,
+      });
       mockPrisma.message.update.mockResolvedValue({
         ...mockMessage,
-        isDeleted: true,
-        content: '[deleted]',
+        reactions: { '👍': ['user-1'] },
       });
 
-      const result = await service.softDelete('msg-1', 'user-1');
+      const result = await service.toggleReaction('msg-1', 'user-1', '👍');
 
       expect(mockPrisma.message.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'msg-1' },
-          data: { isDeleted: true, content: '[deleted]' },
+          data: { reactions: { '👍': ['user-1'] } },
         }),
       );
-      expect(result.isDeleted).toBe(true);
-      expect(result.content).toBe('[deleted]');
+      expect(result.reactions).toEqual({ '👍': ['user-1'] });
     });
 
-    it('should throw NotFoundException when message does not exist', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(null);
-
-      await expect(service.softDelete('bad-id', 'user-1')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw ForbiddenException when caller is not the sender', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(mockMessage);
-
-      await expect(service.softDelete('msg-1', 'user-other')).rejects.toThrow(
-        ForbiddenException,
-      );
-    });
-
-    it('should throw BadRequestException when message is already deleted', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue({
+    it('should remove a user from the emoji list when already reacted', async () => {
+      mockPrisma.message.findUniqueOrThrow.mockResolvedValue({
+        reactions: { '👍': ['user-1', 'user-2'] },
+        roomId: 'room-1',
+        sessionId: null,
+      });
+      mockPrisma.message.update.mockResolvedValue({
         ...mockMessage,
-        isDeleted: true,
+        reactions: { '👍': ['user-2'] },
       });
 
-      await expect(service.softDelete('msg-1', 'user-1')).rejects.toThrow(
-        BadRequestException,
+      await service.toggleReaction('msg-1', 'user-1', '👍');
+
+      expect(mockPrisma.message.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { reactions: { '👍': ['user-2'] } },
+        }),
+      );
+    });
+
+    it('should delete the emoji key entirely when the last reactor removes their reaction', async () => {
+      mockPrisma.message.findUniqueOrThrow.mockResolvedValue({
+        reactions: { '👍': ['user-1'] },
+        roomId: 'room-1',
+        sessionId: null,
+      });
+      mockPrisma.message.update.mockResolvedValue({
+        ...mockMessage,
+        reactions: {},
+      });
+
+      await service.toggleReaction('msg-1', 'user-1', '👍');
+
+      const [call] = mockPrisma.message.update.mock.calls as [
+        { data: { reactions: Record<string, string[]> } },
+      ][];
+      expect(call[0].data.reactions['👍']).toBeUndefined();
+    });
+
+    it('should propagate error when message is not found', async () => {
+      mockPrisma.message.findUniqueOrThrow.mockRejectedValue(
+        new Error('Record not found'),
+      );
+
+      await expect(
+        service.toggleReaction('bad-id', 'user-1', '👍'),
+      ).rejects.toThrow('Record not found');
+    });
+  });
+
+  // ── getCachedRoomMessages ─────────────────────────────────────────────────
+
+  describe('getCachedRoomMessages', () => {
+    it('should return parsed and reversed messages from Redis', async () => {
+      const msgs = [mockMessage, { ...mockMessage, id: 'msg-2' }];
+      mockRedis.lrange.mockResolvedValue(msgs.map((m) => JSON.stringify(m)));
+
+      const result = await service.getCachedRoomMessages('room-1');
+
+      expect(mockRedis.lrange).toHaveBeenCalledWith('chat:room:room-1', 0, 99);
+      expect(result).toHaveLength(2);
+      expect(result[0].id).toBe('msg-2'); // reversed order
+    });
+
+    it('should return empty array when cache is empty', async () => {
+      mockRedis.lrange.mockResolvedValue([]);
+
+      const result = await service.getCachedRoomMessages('room-1');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ── getCachedSessionMessages ──────────────────────────────────────────────
+
+  describe('getCachedSessionMessages', () => {
+    it('should return parsed and reversed messages from Redis', async () => {
+      mockRedis.lrange.mockResolvedValue([JSON.stringify(mockSessionMessage)]);
+
+      const result = await service.getCachedSessionMessages('session-1');
+
+      expect(mockRedis.lrange).toHaveBeenCalledWith(
+        'chat:session:session-1',
+        0,
+        99,
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('msg-2');
+    });
+  });
+
+  // ── clearSessionCache ─────────────────────────────────────────────────────
+
+  describe('clearSessionCache', () => {
+    it('should delete the session cache key from Redis', async () => {
+      mockRedis.del.mockResolvedValue(1);
+
+      await service.clearSessionCache('session-1');
+
+      expect(mockRedis.del).toHaveBeenCalledWith('chat:session:session-1');
+    });
+  });
+
+  // ── setTyping ─────────────────────────────────────────────────────────────
+
+  describe('setTyping', () => {
+    it('should set the typing key with a 4s TTL', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+
+      await service.setTyping('room:room-1', 'user-1', 'alice');
+
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'typing:room:room-1:user-1',
+        'alice',
+        'EX',
+        4,
       );
     });
   });
 
-  // ── react ─────────────────────────────────────────────────────────────────
+  // ── clearTyping ───────────────────────────────────────────────────────────
 
-  describe('react', () => {
-    it('should add a reaction when user has not reacted yet', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(mockMessage);
-      mockPrisma.message.update.mockResolvedValue({
-        ...mockMessage,
-        reactions: ['👍:user-1'],
-      });
+  describe('clearTyping', () => {
+    it('should delete the typing key for the user', async () => {
+      mockRedis.del.mockResolvedValue(1);
 
-      const result = await service.react('msg-1', 'user-1', '👍');
+      await service.clearTyping('room:room-1', 'user-1');
 
-      expect(mockPrisma.message.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: { id: 'msg-1' },
-          data: { reactions: ['👍:user-1'] },
-        }),
-      );
-      expect(result.reactions).toContain('👍:user-1');
+      expect(mockRedis.del).toHaveBeenCalledWith('typing:room:room-1:user-1');
+    });
+  });
+
+  // ── getTypingUsers ────────────────────────────────────────────────────────
+
+  describe('getTypingUsers', () => {
+    it('should return list of typing users with their usernames', async () => {
+      mockRedis.keys.mockResolvedValue([
+        'typing:room:room-1:user-1',
+        'typing:room:room-1:user-2',
+      ]);
+      mockRedis.mget.mockResolvedValue(['alice', 'bob']);
+
+      const result = await service.getTypingUsers('room:room-1');
+
+      expect(mockRedis.keys).toHaveBeenCalledWith('typing:room:room-1:*');
+      expect(result).toEqual([
+        { userId: 'user-1', username: 'alice' },
+        { userId: 'user-2', username: 'bob' },
+      ]);
     });
 
-    it('should remove a reaction when user has already reacted with same emoji', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue({
-        ...mockMessage,
-        reactions: ['👍:user-1', '❤️:user-2'],
-      });
-      mockPrisma.message.update.mockResolvedValue({
-        ...mockMessage,
-        reactions: ['❤️:user-2'],
-      });
+    it('should return empty array and skip mget when no one is typing', async () => {
+      mockRedis.keys.mockResolvedValue([]);
 
-      const result = await service.react('msg-1', 'user-1', '👍');
+      const result = await service.getTypingUsers('room:room-1');
 
-      expect(mockPrisma.message.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { reactions: ['❤️:user-2'] },
-        }),
-      );
-      expect(result.reactions).not.toContain('👍:user-1');
+      expect(result).toEqual([]);
+      expect(mockRedis.mget).not.toHaveBeenCalled();
     });
 
-    it('should allow multiple users to react with the same emoji', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue({
-        ...mockMessage,
-        reactions: ['👍:user-1'],
-      });
-      mockPrisma.message.update.mockResolvedValue({
-        ...mockMessage,
-        reactions: ['👍:user-1', '👍:user-2'],
-      });
+    it('should fall back to "Unknown" when a username value is null', async () => {
+      mockRedis.keys.mockResolvedValue(['typing:room:room-1:user-1']);
+      mockRedis.mget.mockResolvedValue([null]);
 
-      const result = await service.react('msg-1', 'user-2', '👍');
+      const result = await service.getTypingUsers('room:room-1');
 
-      expect(mockPrisma.message.update).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: { reactions: ['👍:user-1', '👍:user-2'] },
-        }),
-      );
-      expect(result.reactions).toHaveLength(2);
-    });
-
-    it('should throw NotFoundException when message does not exist', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue(null);
-
-      await expect(service.react('bad-id', 'user-1', '👍')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('should throw BadRequestException when message is deleted', async () => {
-      mockPrisma.message.findUnique.mockResolvedValue({
-        ...mockMessage,
-        isDeleted: true,
-      });
-
-      await expect(service.react('msg-1', 'user-1', '👍')).rejects.toThrow(
-        BadRequestException,
-      );
+      expect(result[0].username).toBe('Unknown');
     });
   });
 });

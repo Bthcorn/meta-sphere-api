@@ -147,6 +147,7 @@ model Session {
   updatedAt           DateTime             @updatedAt
   sessionParticipants SessionParticipant[]
   sessionLogs         SessionLog[]
+  messages            Message[]
 
   @@map("sessions")
 }
@@ -249,11 +250,20 @@ enum SessionEventType {
 // For other messages, such as session messages, does not store in persistent storage.
 // ============================================================
 model Message {
-  id          String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
-  roomId      String? @db.Uuid()
-  room        Room?   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  senderId    String  @db.Uuid()
-  sender      User    @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  id String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid()
+
+  // Room-scoped chat (Chilling, Library, Lecture lobby)
+  roomId String? @db.Uuid()
+  room   Room?   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  // Session-scoped chat (Meeting, Lecture session)
+  sessionId String?  @db.Uuid
+  session   Session? @relation(fields: [sessionId], references: [id])
+
+  senderId String @db.Uuid()
+  sender   User   @relation("MessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  // Direct message (private chat)
   recipientId String? @db.Uuid()
   recipient   User?   @relation("MessageRecipient", fields: [recipientId], references: [id])
 
@@ -281,7 +291,7 @@ enum MessageType {
   TEXT
   FILE // message that references a File upload
   SYSTEM // auto-generated, e.g. "Alice joined the room"
-  // IMAGE removed — images are just FILE uploads; MessageType.FILE covers this
+  IMAGE // images are just FILE uploads, MessageType.FILE covers this
 }
 
 // ============================================================
