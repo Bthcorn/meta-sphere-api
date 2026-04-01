@@ -35,6 +35,9 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET}
+      LIVEKIT_URL: ${LIVEKIT_URL:-ws://livekit:7880}
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,7 +140,7 @@ services:
       - '7880:7880'
       - '7881:7881'
       - '7882:7882/udp'
-    command: --dev --redis-host redis --redis-password ""
+    command: --dev --redis-host redis:6379 --redis-password ""
     depends_on:
       redis:
         condition: service_healthy
