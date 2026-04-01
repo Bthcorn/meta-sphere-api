@@ -35,6 +35,10 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET}
       JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+      LIVEKIT_URL: http://livekit:7880
+      LIVEKIT_PUBLIC_URL: ${LIVEKIT_PUBLIC_URL:-ws://localhost:7880}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-devkey}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-secret}
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,6 +46,8 @@ services:
         condition: service_healthy
       minio-init:
         condition: service_completed_successfully
+      livekit:
+        condition: service_started
 
   postgres:
     image: postgres:16-alpine
@@ -137,7 +143,7 @@ services:
       - '7880:7880'
       - '7881:7881'
       - '7882:7882/udp'
-    command: --dev --redis-host redis --redis-password ""
+    command: --dev --bind 0.0.0.0 --redis-host redis:6379 --redis-password ""
     depends_on:
       redis:
         condition: service_healthy

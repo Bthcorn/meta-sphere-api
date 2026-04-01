@@ -421,7 +421,7 @@ export class SessionsService {
       isHost,
     );
 
-    const url = this.liveKit.getLiveKitUrl();
+    const url = this.liveKit.getLiveKitPublicUrl();
 
     return { token, url };
   }
