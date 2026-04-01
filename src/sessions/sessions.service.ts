@@ -405,8 +405,13 @@ export class SessionsService {
       );
     }
 
-    if (session.status !== SessionStatus.ACTIVE) {
-      throw new ConflictException('Session is not active');
+    // Allow voice tokens for both SCHEDULED and ACTIVE sessions so the host
+    // can connect to the voice room before the session officially starts.
+    if (
+      session.status !== SessionStatus.ACTIVE &&
+      session.status !== SessionStatus.SCHEDULED
+    ) {
+      throw new ConflictException('Session is not active or scheduled');
     }
 
     const isHost = participant.role === ParticipantRole.HOST;
