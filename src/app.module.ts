@@ -21,6 +21,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { LiveKitModule } from './livekit/livekit.module';
 import { ChatModule } from './chat/chat.module';
+import { SessionFilesModule } from './session-files/session-files.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ChatModule } from './chat/chat.module';
     WhiteboardModule,
     LiveKitModule,
     ChatModule,
+    SessionFilesModule,
   ],
   controllers: [AppController],
   providers: [

@@ -29,10 +29,11 @@ services:
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: minio
       MINIO_PORT: 9000
-      MINIO_USE_SSL: "false"
+      MINIO_USE_SSL: 'false'
       MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
       MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_PUBLIC_ENDPOINT: ${MINIO_PUBLIC_ENDPOINT:-http://localhost:9000}
       JWT_ACCESS_TOKEN_SECRET: ${JWT_ACCESS_TOKEN_SECRET}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
       LIVEKIT_URL: http://livekit:7880
@@ -153,4 +154,3 @@ volumes:
   postgres_data:
   redis_data:
   minio_data:
-
