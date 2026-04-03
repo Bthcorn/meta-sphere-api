@@ -4,7 +4,10 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { FileCategory } from 'src/generated/prisma/client';
 
 export class ListFilesDto {
-  @ApiPropertyOptional({ enum: FileCategory, description: 'Filter by category' })
+  @ApiPropertyOptional({
+    enum: FileCategory,
+    description: 'Filter by category',
+  })
   @IsOptional()
   @IsEnum(FileCategory)
   category?: FileCategory;
@@ -19,11 +22,40 @@ export class ListFilesDto {
   @IsString()
   subject?: string;
 
-  @ApiPropertyOptional({ description: 'Filter by year level (1–4)', minimum: 1, maximum: 4 })
+  @ApiPropertyOptional({
+    description: 'Filter by year level (1–4)',
+    minimum: 1,
+    maximum: 4,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(4)
   yearLevel?: number;
+
+  @ApiPropertyOptional({
+    description: 'Text search across name, subject, and description',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
+    description: 'Sort field',
+    enum: ['createdAt', 'downloadCount', 'name'],
+    default: 'createdAt',
+  })
+  @IsOptional()
+  @IsString()
+  sortBy?: 'createdAt' | 'downloadCount' | 'name';
+
+  @ApiPropertyOptional({
+    description: 'Sort direction',
+    enum: ['asc', 'desc'],
+    default: 'desc',
+  })
+  @IsOptional()
+  @IsString()
+  sortOrder?: 'asc' | 'desc';
 }

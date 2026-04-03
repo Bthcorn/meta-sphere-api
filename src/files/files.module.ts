@@ -8,5 +8,6 @@ import { MinioModule } from 'src/minio/minio.module';
   imports: [PrismaModule, MinioModule],
   controllers: [FilesController],
   providers: [FilesService],
+  exports: [FilesService],
 })
 export class FilesModule {}

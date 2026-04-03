@@ -19,6 +19,13 @@ export class UploadFileDto {
   @IsUUID()
   roomId?: string;
 
+  @ApiPropertyOptional({
+    description: 'Session ID (session tray uploads only)',
+  })
+  @IsOptional()
+  @IsUUID()
+  sessionId?: string;
+
   @ApiPropertyOptional({ description: 'Short description of the file' })
   @IsOptional()
   @IsString()
@@ -43,13 +50,19 @@ export class UploadFileDto {
   )
   tags?: string[];
 
-  @ApiPropertyOptional({ description: 'Subject name, e.g. "CS3101 - Data Structures"' })
+  @ApiPropertyOptional({
+    description: 'Subject name, e.g. "CS3101 - Data Structures"',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)
   subject?: string;
 
-  @ApiPropertyOptional({ description: 'Target year level (1–4)', minimum: 1, maximum: 4 })
+  @ApiPropertyOptional({
+    description: 'Target year level (1–4)',
+    minimum: 1,
+    maximum: 4,
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -57,7 +70,10 @@ export class UploadFileDto {
   @Max(4)
   yearLevel?: number;
 
-  @ApiPropertyOptional({ description: 'Whether the file is publicly accessible', default: true })
+  @ApiPropertyOptional({
+    description: 'Whether the file is publicly accessible',
+    default: true,
+  })
   @IsOptional()
   @Transform(({ value }: { value: unknown }) => {
     if (value === 'true' || value === true) return true;
