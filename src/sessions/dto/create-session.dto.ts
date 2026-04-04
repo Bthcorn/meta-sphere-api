@@ -6,12 +6,16 @@ import {
   IsDateString,
   IsUUID,
   MinLength,
+  IsArray,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { SessionType } from 'src/generated/prisma/client';
 
 export class CreateSessionDto {
-  @ApiProperty({ example: 'room-uuid-here', description: 'ID of the room this session belongs to' })
+  @ApiProperty({
+    example: 'room-uuid-here',
+    description: 'ID of the room this session belongs to',
+  })
   @IsUUID()
   roomId: string;
 
@@ -20,7 +24,10 @@ export class CreateSessionDto {
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ required: false, example: 'Covering sorting algorithms tonight.' })
+  @ApiProperty({
+    required: false,
+    example: 'Covering sorting algorithms tonight.',
+  })
   @IsString()
   @IsOptional()
   description?: string;
@@ -34,9 +41,23 @@ export class CreateSessionDto {
   @IsOptional()
   scheduledStartTime?: string;
 
-  @ApiProperty({ required: false, example: 'studypass', description: 'Optional password to restrict entry' })
+  @ApiProperty({
+    required: false,
+    example: 'studypass',
+    description: 'Optional password to restrict entry',
+  })
   @IsString()
   @MinLength(4)
   @IsOptional()
   password?: string;
+
+  @ApiProperty({
+    required: false,
+    example: ['user-id-1', 'user-id-2'],
+    description: 'Optional array of friend user IDs to invite',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @IsOptional()
+  invitedFriendsIds?: string[];
 }

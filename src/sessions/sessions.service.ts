@@ -116,6 +116,18 @@ export class SessionsService {
       sessionId: session.id,
     });
 
+    // Emit invitation event if friends were invited
+    if (dto.invitedFriendsIds && dto.invitedFriendsIds.length > 0) {
+      this.eventEmitter.emit('session.invite_friends', {
+        sessionId: session.id,
+        roomId: session.roomId,
+        hostId,
+        invitedFriendsIds: dto.invitedFriendsIds,
+        sessionTitle: session.title,
+        sessionType: session.type,
+      });
+    }
+
     return this.stripPassword(session);
   }
 

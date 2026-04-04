@@ -207,4 +207,27 @@ export class RealtimeGateway
       await this.switchUserRoom(userState.userId, COMMON_AREA_ID);
     }
   }
+
+  @OnEvent('session.invite_friends')
+  handleSessionInviteFriends(payload: {
+    sessionId: string;
+    roomId: string;
+    hostId: string;
+    invitedFriendsIds: string[];
+    sessionTitle: string;
+    sessionType: string;
+  }): void {
+    for (const friendId of payload.invitedFriendsIds) {
+      const socket = this.userSockets.get(friendId);
+      if (socket) {
+        socket.emit('session_invitation', {
+          sessionId: payload.sessionId,
+          roomId: payload.roomId,
+          hostId: payload.hostId,
+          sessionTitle: payload.sessionTitle,
+          sessionType: payload.sessionType,
+        });
+      }
+    }
+  }
 }
