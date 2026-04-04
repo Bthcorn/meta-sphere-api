@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { FriendsService } from './friends.service';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { PresenceService } from 'src/presence/presence.service';
 import { FriendshipStatus } from 'src/generated/prisma/client';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -66,6 +67,13 @@ const mockPrisma = {
   },
 };
 
+// ── Mock PresenceService ──────────────────────────────────────────────────────
+
+const mockPresenceService = {
+  isUserOnline: jest.fn(),
+  getOnlineUsers: jest.fn(),
+};
+
 // ── Suite ─────────────────────────────────────────────────────────────────────
 
 describe('FriendsService', () => {
@@ -76,6 +84,7 @@ describe('FriendsService', () => {
       providers: [
         FriendsService,
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: PresenceService, useValue: mockPresenceService },
       ],
     }).compile();
 
@@ -127,6 +136,39 @@ describe('FriendsService', () => {
       mockPrisma.friendship.findMany.mockResolvedValue([]);
 
       const result = await service.listFriends('user-a');
+
+      expect(result).toEqual([]);
+    });
+  });
+
+  // ── listOnlineFriends ─────────────────────────────────────────────────────
+
+  describe('listOnlineFriends', () => {
+    it('should return only online friends', async () => {
+      mockPrisma.friendship.findMany.mockResolvedValue([
+        acceptedFriendship,
+        {
+          ...acceptedFriendship,
+          id: 'friendship-2',
+          addresseeId: 'user-c',
+          addressee: { ...mockUserB, id: 'user-c' },
+        },
+      ]);
+      mockPresenceService.isUserOnline
+        .mockReturnValueOnce(true) // user-b is online
+        .mockReturnValueOnce(false); // user-c is offline
+
+      const result = await service.listOnlineFriends('user-a');
+
+      expect(result).toHaveLength(1);
+      expect(result[0].friend.id).toBe('user-b');
+    });
+
+    it('should return empty array when no friends are online', async () => {
+      mockPrisma.friendship.findMany.mockResolvedValue([acceptedFriendship]);
+      mockPresenceService.isUserOnline.mockReturnValue(false);
+
+      const result = await service.listOnlineFriends('user-a');
 
       expect(result).toEqual([]);
     });

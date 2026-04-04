@@ -18,6 +18,8 @@ import {
   ParticipantStatus,
 } from 'src/generated/prisma/client';
 
+import { JwtService } from '@nestjs/jwt';
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
 const mockRoom = { id: 'room-1', isActive: true };
@@ -104,6 +106,10 @@ describe('SessionsService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
         { provide: LiveKitService, useValue: mockLiveKit },
+        {
+          provide: JwtService,
+          useValue: { verify: jest.fn(), sign: jest.fn() },
+        },
       ],
     }).compile();
 

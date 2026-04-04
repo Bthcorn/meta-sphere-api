@@ -16,6 +16,7 @@ import { StateService } from './state.service';
 import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { Position } from './dto/position';
 import { SessionsService } from '../sessions/sessions.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 const COMMON_AREA_ID = 'common_area';
 
@@ -24,7 +25,7 @@ export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
   @WebSocketServer()
-  server: Server;
+  server!: Server;
 
   private readonly jwtSecret: string;
   private readonly userSockets = new Map<string, Socket>();
@@ -34,6 +35,7 @@ export class RealtimeGateway
     private readonly configService: ConfigService,
     private readonly stateService: StateService,
     private readonly sessionsService: SessionsService,
+    private readonly eventEmitter: EventEmitter2,
   ) {
     const secret = this.configService.get<string>('JWT_ACCESS_TOKEN_SECRET');
     if (!secret || typeof secret !== 'string') {
@@ -87,6 +89,8 @@ export class RealtimeGateway
       await client.join(roomId);
       this.userSockets.set(userId, client);
 
+      this.eventEmitter.emit('user.connected', { userId });
+
       client.emit('current_state', this.stateService.getAllStates(roomId));
       client
         .to(roomId)
@@ -109,6 +113,7 @@ export class RealtimeGateway
 
       if (this.userSockets.get(userId)?.id === client.id) {
         this.userSockets.delete(userId);
+        this.eventEmitter.emit('user.disconnected', { userId });
       }
 
       this.server.to(roomId).emit('user_disconnected', userId);
@@ -200,6 +205,35 @@ export class RealtimeGateway
     const usersInRoom = this.stateService.getAllStates(sessionId);
     for (const userState of usersInRoom) {
       await this.switchUserRoom(userState.userId, COMMON_AREA_ID);
+    }
+  }
+
+  @OnEvent('session.invite_friends')
+  handleSessionInviteFriends(payload: {
+    sessionId: string;
+    roomId: string;
+    hostId: string;
+    invitedFriendsIds: string[];
+    sessionTitle: string;
+    sessionType: string;
+  }): void {
+    for (const friendId of payload.invitedFriendsIds) {
+      const socket = this.userSockets.get(friendId);
+      if (socket) {
+        const inviteToken = this.jwtService.sign(
+          { sessionId: payload.sessionId, invitedUserId: friendId },
+          { secret: this.jwtSecret, expiresIn: '1m' },
+        );
+
+        socket.emit('session_invitation', {
+          sessionId: payload.sessionId,
+          roomId: payload.roomId,
+          hostId: payload.hostId,
+          sessionTitle: payload.sessionTitle,
+          sessionType: payload.sessionType,
+          inviteToken,
+        });
+      }
     }
   }
 }

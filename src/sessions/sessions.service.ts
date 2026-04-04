@@ -5,6 +5,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -26,6 +27,7 @@ export class SessionsService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
     private readonly liveKit: LiveKitService,
+    private readonly jwtService: JwtService,
   ) {}
 
   // ── Internal helpers ──────────────────────────────────────────────────
@@ -115,6 +117,18 @@ export class SessionsService {
       userId: hostId,
       sessionId: session.id,
     });
+
+    // Emit invitation event if friends were invited
+    if (dto.invitedFriendsIds && dto.invitedFriendsIds.length > 0) {
+      this.eventEmitter.emit('session.invite_friends', {
+        sessionId: session.id,
+        roomId: session.roomId,
+        hostId,
+        invitedFriendsIds: dto.invitedFriendsIds,
+        sessionTitle: session.title,
+        sessionType: session.type,
+      });
+    }
 
     return this.stripPassword(session);
   }
@@ -211,7 +225,12 @@ export class SessionsService {
     return this.stripPassword(updated);
   }
 
-  async join(id: string, userId: string, password?: string) {
+  async join(
+    id: string,
+    userId: string,
+    password?: string,
+    inviteToken?: string,
+  ) {
     const session = await this.getSession(id);
 
     if (
@@ -240,7 +259,30 @@ export class SessionsService {
       );
     }
 
-    if (session.password) {
+    let isTokenValid = false;
+    if (inviteToken) {
+      try {
+        const payload = this.jwtService.verify<{
+          sessionId: string;
+          invitedUserId: string;
+        }>(inviteToken);
+
+        if (payload.sessionId === id && payload.invitedUserId === userId) {
+          isTokenValid = true;
+        } else {
+          throw new ForbiddenException(
+            'Invalid invitation token for this session or user',
+          );
+        }
+      } catch (err) {
+        if (err instanceof ForbiddenException) {
+          throw err;
+        }
+        throw new ForbiddenException('Invalid or expired invitation token');
+      }
+    }
+
+    if (session.password && !isTokenValid) {
       if (!password) {
         throw new BadRequestException('This session requires a password');
       }

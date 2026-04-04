@@ -29,6 +29,13 @@ export class FriendsController {
     return this.friendsService.listFriends(user.userId);
   }
 
+  @Get('online')
+  @ApiOperation({ summary: 'List online friends only' })
+  @ApiResponse({ status: 200, description: 'Online friends returned.' })
+  listOnlineFriends(@CurrentUser() user: JwtUser) {
+    return this.friendsService.listOnlineFriends(user.userId);
+  }
+
   @Get('requests')
   @ApiOperation({ summary: 'List pending incoming friend requests' })
   @ApiResponse({ status: 200, description: 'Pending requests returned.' })
@@ -41,7 +48,10 @@ export class FriendsController {
   @ApiResponse({ status: 201, description: 'Friend request sent.' })
   @ApiResponse({ status: 400, description: 'Cannot send request to yourself.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
-  @ApiResponse({ status: 409, description: 'Request or friendship already exists.' })
+  @ApiResponse({
+    status: 409,
+    description: 'Request or friendship already exists.',
+  })
   sendRequest(
     @CurrentUser() user: JwtUser,
     @Param('userId', ParseUUIDPipe) userId: string,

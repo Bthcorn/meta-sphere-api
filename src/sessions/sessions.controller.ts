@@ -107,7 +107,7 @@ export class SessionsController {
   @ApiOperation({ summary: 'Join a session as participant' })
   @ApiResponse({ status: 200, description: 'Joined session.' })
   @ApiResponse({ status: 400, description: 'Password required.' })
-  @ApiResponse({ status: 403, description: 'Kicked or wrong password.' })
+  @ApiResponse({ status: 403, description: 'Kicked or wrong password/token.' })
   @ApiResponse({ status: 409, description: 'Session locked or not joinable.' })
   @ApiResponse({ status: 401, description: 'Unauthorized.' })
   join(
@@ -115,7 +115,12 @@ export class SessionsController {
     @CurrentUser() user: JwtUser,
     @Body() dto: JoinSessionDto,
   ) {
-    return this.sessionsService.join(id, user.userId, dto.password);
+    return this.sessionsService.join(
+      id,
+      user.userId,
+      dto.password,
+      dto.inviteToken,
+    );
   }
 
   @Post(':id/leave')
