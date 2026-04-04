@@ -1,6 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AccessToken, RoomServiceClient } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, TrackSource } from 'livekit-server-sdk';
 
 @Injectable()
 export class LiveKitService implements OnModuleInit {
@@ -38,6 +38,7 @@ export class LiveKitService implements OnModuleInit {
     name: string | null,
     sessionId: string,
     isHost: boolean = false,
+    canScreenShare: boolean = false,
   ): Promise<string> {
     const apiKey = this.configService.getOrThrow<string>('LIVEKIT_API_KEY');
     const secret = this.configService.getOrThrow<string>('LIVEKIT_API_SECRET');
@@ -53,6 +54,13 @@ export class LiveKitService implements OnModuleInit {
       canPublish: true,
       canSubscribe: true,
       roomAdmin: isHost,
+      canPublishSources: canScreenShare
+        ? [
+            TrackSource.MICROPHONE,
+            TrackSource.SCREEN_SHARE,
+            TrackSource.SCREEN_SHARE_AUDIO,
+          ]
+        : [TrackSource.MICROPHONE],
     });
 
     return at.toJwt();
