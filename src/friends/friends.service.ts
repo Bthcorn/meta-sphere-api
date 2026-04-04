@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { FriendshipStatus } from 'src/generated/prisma/client';
+import { PresenceService } from 'src/presence/presence.service';
 
 const USER_SUMMARY_SELECT = {
   id: true,
@@ -31,7 +32,10 @@ const FRIENDSHIP_SELECT = {
 
 @Injectable()
 export class FriendsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly presenceService: PresenceService,
+  ) {}
 
   async listFriends(userId: string) {
     const friendships = await this.prisma.friendship.findMany({
@@ -48,6 +52,13 @@ export class FriendsService {
       since: f.updatedAt,
       friend: f.requesterId === userId ? f.addressee : f.requester,
     }));
+  }
+
+  async listOnlineFriends(userId: string) {
+    const friends = await this.listFriends(userId);
+    return friends.filter((f) =>
+      this.presenceService.isUserOnline(f.friend.id),
+    );
   }
 
   async listPendingRequests(userId: string) {
@@ -114,14 +125,10 @@ export class FriendsService {
     });
     if (!friendship) throw new NotFoundException('Friend request not found');
     if (friendship.addresseeId !== userId) {
-      throw new ForbiddenException(
-        'You can only accept requests sent to you',
-      );
+      throw new ForbiddenException('You can only accept requests sent to you');
     }
     if (friendship.status !== FriendshipStatus.PENDING) {
-      throw new BadRequestException(
-        'This request is no longer pending',
-      );
+      throw new BadRequestException('This request is no longer pending');
     }
 
     return this.prisma.friendship.update({
@@ -137,14 +144,10 @@ export class FriendsService {
     });
     if (!friendship) throw new NotFoundException('Friend request not found');
     if (friendship.addresseeId !== userId) {
-      throw new ForbiddenException(
-        'You can only decline requests sent to you',
-      );
+      throw new ForbiddenException('You can only decline requests sent to you');
     }
     if (friendship.status !== FriendshipStatus.PENDING) {
-      throw new BadRequestException(
-        'This request is no longer pending',
-      );
+      throw new BadRequestException('This request is no longer pending');
     }
 
     return this.prisma.friendship.update({
