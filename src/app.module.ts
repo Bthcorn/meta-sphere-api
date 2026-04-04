@@ -22,6 +22,7 @@ import { WhiteboardModule } from './whiteboard/whiteboard.module';
 import { LiveKitModule } from './livekit/livekit.module';
 import { ChatModule } from './chat/chat.module';
 import { SessionFilesModule } from './session-files/session-files.module';
+import { PresenceModule } from './presence/presence.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { SessionFilesModule } from './session-files/session-files.module';
     LiveKitModule,
     ChatModule,
     SessionFilesModule,
+    PresenceModule,
   ],
   controllers: [AppController],
   providers: [
