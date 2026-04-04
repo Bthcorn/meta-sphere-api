@@ -172,7 +172,8 @@ export class SessionsController {
   @ApiOperation({ summary: 'Generate a LiveKit voice token for this session' })
   @ApiResponse({
     status: 200,
-    description: 'Token generated.',
+    description:
+      'Token generated. For MEETING type sessions the token will include screen share sources (SCREEN_SHARE, SCREEN_SHARE_AUDIO) in addition to MICROPHONE.',
     schema: {
       type: 'object',
       properties: {

@@ -12,6 +12,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   SessionStatus,
   SessionEventType,
+  SessionType,
   ParticipantRole,
   ParticipantStatus,
   Prisma,
@@ -457,6 +458,7 @@ export class SessionsService {
     }
 
     const isHost = participant.role === ParticipantRole.HOST;
+    const canScreenShare = session.type === SessionType.MEETING;
     const displayName =
       `${participant.user.firstName} ${participant.user.lastName}`.trim() ||
       participant.user.username;
@@ -466,6 +468,7 @@ export class SessionsService {
       displayName,
       sessionId,
       isHost,
+      canScreenShare,
     );
 
     const url = this.liveKit.getLiveKitPublicUrl();

@@ -26,7 +26,7 @@ export class VoiceController {
     },
   })
   async getLobbyToken(@CurrentUser() user: JwtUser) {
-    const token = await this.liveKit.createToken(user.userId, user.username, LOBBY_ROOM);
+    const token = await this.liveKit.createToken(user.userId, user.username, LOBBY_ROOM, false, false);
     return { token, url: this.liveKit.getLiveKitPublicUrl() };
   }
 
@@ -48,7 +48,7 @@ export class VoiceController {
     @Query('roomId') roomId: string,
   ) {
     if (!roomId) throw new BadRequestException('roomId is required');
-    const token = await this.liveKit.createToken(user.userId, user.username, `area-${roomId}`);
+    const token = await this.liveKit.createToken(user.userId, user.username, `area-${roomId}`, false, false);
     return { token, url: this.liveKit.getLiveKitPublicUrl() };
   }
 }

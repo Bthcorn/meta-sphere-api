@@ -153,6 +153,89 @@ describe('Sessions Voice Chat (e2e)', () => {
     }
   }, 20000);
 
+  const decodeJwtPayload = (token: string): Record<string, unknown> => {
+    const base64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+  };
+
+  it('should include screen share sources in voice token for MEETING session', async () => {
+    const hostAuth = await registerUser('screenshare-host', true);
+
+    const roomRes = await request(app.getHttpServer())
+      .post('/api/admin/rooms')
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .send({ name: 'ScreenShareRoom', type: 'WORKSPACE' });
+    expect(roomRes.status).toBe(201);
+
+    const sessRes = await request(app.getHttpServer())
+      .post('/api/sessions')
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .send({
+        roomId: roomRes.body.id,
+        title: 'Screen Share Meeting',
+        type: 'MEETING',
+        scheduledStartTime: new Date(Date.now() + 5000).toISOString(),
+      });
+    expect(sessRes.status).toBe(201);
+    const sessionId = sessRes.body.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/start`)
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .expect(200);
+
+    const tokenRes = await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/voice-token`)
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .expect(200);
+
+    const payload = decodeJwtPayload(tokenRes.body.token);
+    const sources: string[] = (payload?.video as any)?.canPublishSources ?? [];
+
+    expect(sources).toContain('screen_share');
+    expect(sources).toContain('screen_share_audio');
+    expect(sources).toContain('microphone');
+  }, 20000);
+
+  it('should NOT include screen share sources for STUDY type session', async () => {
+    const hostAuth = await registerUser('study-host', true);
+
+    const roomRes = await request(app.getHttpServer())
+      .post('/api/admin/rooms')
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .send({ name: 'StudyRoom', type: 'WORKSPACE' });
+    expect(roomRes.status).toBe(201);
+
+    const sessRes = await request(app.getHttpServer())
+      .post('/api/sessions')
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .send({
+        roomId: roomRes.body.id,
+        title: 'Study Session',
+        type: 'STUDY',
+        scheduledStartTime: new Date(Date.now() + 5000).toISOString(),
+      });
+    expect(sessRes.status).toBe(201);
+    const sessionId = sessRes.body.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/start`)
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .expect(200);
+
+    const tokenRes = await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/voice-token`)
+      .set('Authorization', `Bearer ${hostAuth.access_token}`)
+      .expect(200);
+
+    const payload = decodeJwtPayload(tokenRes.body.token);
+    const sources: string[] = (payload?.video as any)?.canPublishSources ?? [];
+
+    expect(sources).not.toContain('screen_share');
+    expect(sources).not.toContain('screen_share_audio');
+    expect(sources).toContain('microphone');
+  }, 20000);
+
   it('should deny voice token for users not in the session', async () => {
     const hostAuth = await registerUser('hostuser2', true);
     const bystanderAuth = await registerUser('bystander');
