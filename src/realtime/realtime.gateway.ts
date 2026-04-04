@@ -220,12 +220,18 @@ export class RealtimeGateway
     for (const friendId of payload.invitedFriendsIds) {
       const socket = this.userSockets.get(friendId);
       if (socket) {
+        const inviteToken = this.jwtService.sign(
+          { sessionId: payload.sessionId, invitedUserId: friendId },
+          { secret: this.jwtSecret, expiresIn: '1m' },
+        );
+
         socket.emit('session_invitation', {
           sessionId: payload.sessionId,
           roomId: payload.roomId,
           hostId: payload.hostId,
           sessionTitle: payload.sessionTitle,
           sessionType: payload.sessionType,
+          inviteToken,
         });
       }
     }

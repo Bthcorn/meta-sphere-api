@@ -181,6 +181,7 @@ describe('Session Invitations (e2e)', () => {
       hostId: string;
       sessionTitle: string;
       sessionType: string;
+      inviteToken: string;
     }>(friend1Socket, 'session_invitation');
 
     const friend2InvitePromise = assertOnEvent<{
@@ -189,6 +190,7 @@ describe('Session Invitations (e2e)', () => {
       hostId: string;
       sessionTitle: string;
       sessionType: string;
+      inviteToken: string;
     }>(friend2Socket, 'session_invitation');
 
     // Create session with invited friends
@@ -219,6 +221,8 @@ describe('Session Invitations (e2e)', () => {
       sessionTitle: 'Study Session with Friends',
       sessionType: SessionType.STUDY,
     });
+    expect(friend1Invite.inviteToken).toBeDefined();
+    expect(typeof friend1Invite.inviteToken).toBe('string');
 
     expect(friend2Invite).toMatchObject({
       sessionId,
@@ -227,6 +231,8 @@ describe('Session Invitations (e2e)', () => {
       sessionTitle: 'Study Session with Friends',
       sessionType: SessionType.STUDY,
     });
+    expect(friend2Invite.inviteToken).toBeDefined();
+    expect(typeof friend2Invite.inviteToken).toBe('string');
 
     friend1Socket.disconnect();
     friend2Socket.disconnect();
@@ -285,6 +291,7 @@ describe('Session Invitations (e2e)', () => {
     // Set up listener
     const onlineInvitePromise = assertOnEvent<{
       sessionId: string;
+      inviteToken: string;
     }>(onlineFriendSocket, 'session_invitation');
 
     // Create session inviting both
@@ -330,5 +337,100 @@ describe('Session Invitations (e2e)', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(sessionResponse.body.id).toBeDefined();
+  });
+
+  it('should allow joining a session with an invite token bypassing password, and reject invalid tokens', async () => {
+    const hostUser = await registerUser(app, 'host_token_test');
+    const invitedUser = await registerUser(app, 'invited_token_test');
+    const uninvitedUser = await registerUser(app, 'uninvited_token_test');
+
+    // Make host and invited friend
+    await request(app.getHttpServer())
+      .post(`/api/friends/request/${invitedUser.userId}`)
+      .set('Authorization', `Bearer ${hostUser.jwtToken}`)
+      .expect(201);
+
+    const friendship = await prismaService.friendship.findFirst({
+      where: { requesterId: hostUser.userId, addresseeId: invitedUser.userId },
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/friends/accept/${friendship?.id}`)
+      .set('Authorization', `Bearer ${invitedUser.jwtToken}`)
+      .expect(201);
+
+    // Connect invited user
+    const invitedSocket = io(serverUrl, {
+      auth: { token: invitedUser.jwtToken },
+      transports: ['websocket'],
+    });
+
+    await assertConnected(invitedSocket);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Create room
+    const room = await roomsService.create(hostUser.userId, {
+      name: 'Token Test Room',
+      type: RoomType.WORKSPACE,
+    });
+
+    // Listen for invitation
+    const invitePromise = assertOnEvent<{
+      sessionId: string;
+      inviteToken: string;
+    }>(invitedSocket, 'session_invitation');
+
+    // Create password protected session and invite friend
+    const sessionResponse = await request(app.getHttpServer())
+      .post('/api/sessions')
+      .set('Authorization', `Bearer ${hostUser.jwtToken}`)
+      .send({
+        roomId: room.id,
+        title: 'Password Protected Session',
+        type: SessionType.STUDY,
+        password: 'securepassword123',
+        invitedFriendsIds: [invitedUser.userId],
+      })
+      .expect(201);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    const sessionId = sessionResponse.body.id as string;
+
+    // Get the invitation that includes the invite token
+    const inviteData = await invitePromise;
+    expect(inviteData.sessionId).toBe(sessionId);
+    expect(inviteData.inviteToken).toBeDefined();
+
+    // 1. Another user attempting to use the token should be rejected
+    await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/join`)
+      .set('Authorization', `Bearer ${uninvitedUser.jwtToken}`)
+      .send({
+        inviteToken: inviteData.inviteToken,
+      })
+      .expect(403);
+
+    // 2. The invited user uses the token, without password, should succeed
+    const joinResponse = await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/join`)
+      .set('Authorization', `Bearer ${invitedUser.jwtToken}`)
+      .send({
+        inviteToken: inviteData.inviteToken,
+      })
+      .expect(200);
+
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(joinResponse.body.message).toBe('Joined session successfully');
+
+    // 3. A totally fake token should be rejected
+    await request(app.getHttpServer())
+      .post(`/api/sessions/${sessionId}/join`)
+      .set('Authorization', `Bearer ${uninvitedUser.jwtToken}`)
+      .send({
+        inviteToken: 'fake.jwt.token',
+      })
+      .expect(403);
+
+    invitedSocket.disconnect();
   });
 });
