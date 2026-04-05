@@ -8,6 +8,7 @@ import {
 import { PrismaService } from 'src/prisma/prisma.service';
 import { FriendshipStatus } from 'src/generated/prisma/client';
 import { PresenceService } from 'src/presence/presence.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 const USER_SUMMARY_SELECT = {
   id: true,
@@ -35,6 +36,7 @@ export class FriendsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly presenceService: PresenceService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async listFriends(userId: string) {
@@ -101,7 +103,7 @@ export class FriendsService {
         );
       }
       if (existing.status === FriendshipStatus.DECLINED) {
-        return this.prisma.friendship.update({
+        const result = await this.prisma.friendship.update({
           where: { id: existing.id },
           data: {
             requesterId,
@@ -110,13 +112,17 @@ export class FriendsService {
           },
           select: FRIENDSHIP_SELECT,
         });
+        this.eventEmitter.emit('friend.updated', { userIds: [addresseeId] });
+        return result;
       }
     }
 
-    return this.prisma.friendship.create({
+    const created = await this.prisma.friendship.create({
       data: { requesterId, addresseeId },
       select: FRIENDSHIP_SELECT,
     });
+    this.eventEmitter.emit('friend.updated', { userIds: [addresseeId] });
+    return created;
   }
 
   async acceptRequest(userId: string, requestId: string) {
@@ -131,11 +137,15 @@ export class FriendsService {
       throw new BadRequestException('This request is no longer pending');
     }
 
-    return this.prisma.friendship.update({
+    const result = await this.prisma.friendship.update({
       where: { id: requestId },
       data: { status: FriendshipStatus.ACCEPTED },
       select: FRIENDSHIP_SELECT,
     });
+    this.eventEmitter.emit('friend.updated', {
+      userIds: [result.requesterId, result.addresseeId],
+    });
+    return result;
   }
 
   async declineRequest(userId: string, requestId: string) {
@@ -150,11 +160,15 @@ export class FriendsService {
       throw new BadRequestException('This request is no longer pending');
     }
 
-    return this.prisma.friendship.update({
+    const result = await this.prisma.friendship.update({
       where: { id: requestId },
       data: { status: FriendshipStatus.DECLINED },
       select: FRIENDSHIP_SELECT,
     });
+    this.eventEmitter.emit('friend.updated', {
+      userIds: [result.requesterId, result.addresseeId],
+    });
+    return result;
   }
 
   async removeFriend(userId: string, friendUserId: string) {
@@ -173,6 +187,9 @@ export class FriendsService {
     }
 
     await this.prisma.friendship.delete({ where: { id: friendship.id } });
+    this.eventEmitter.emit('friend.updated', {
+      userIds: [userId, friendUserId],
+    });
     return { message: 'Friend removed successfully' };
   }
 }

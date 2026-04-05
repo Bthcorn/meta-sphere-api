@@ -208,6 +208,16 @@ export class RealtimeGateway
     }
   }
 
+  @OnEvent('friend.updated')
+  handleFriendUpdated(payload: { userIds: string[] }): void {
+    for (const userId of payload.userIds) {
+      const socket = this.userSockets.get(userId);
+      if (socket) {
+        socket.emit('friend_requests:updated');
+      }
+    }
+  }
+
   @OnEvent('session.invite_friends')
   handleSessionInviteFriends(payload: {
     sessionId: string;

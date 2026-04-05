@@ -9,6 +9,7 @@ import { FriendsService } from './friends.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { PresenceService } from 'src/presence/presence.service';
 import { FriendshipStatus } from 'src/generated/prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -85,6 +86,7 @@ describe('FriendsService', () => {
         FriendsService,
         { provide: PrismaService, useValue: mockPrisma },
         { provide: PresenceService, useValue: mockPresenceService },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 
