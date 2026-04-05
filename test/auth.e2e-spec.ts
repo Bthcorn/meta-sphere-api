@@ -381,6 +381,45 @@ describe('AuthController (e2e)', () => {
         .expect(200);
     });
 
+    it('should retrieve own profile via /users/me after register and login', async () => {
+      // 1. Register
+      const registerDto = {
+        username: 'meuser',
+        password: 'password123',
+        email: 'me@example.com',
+        firstName: 'Me',
+        lastName: 'User',
+      };
+
+      const registerResponse = await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send(registerDto)
+        .expect(201);
+
+      expect(registerResponse.body).toHaveProperty('access_token');
+
+      // 2. Login
+      const loginResponse = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ username: 'meuser', password: 'password123' })
+        .expect(200);
+
+      const loginToken = loginResponse.body.access_token;
+
+      // 3. GET /users/me with the login token
+      const meResponse = await request(app.getHttpServer())
+        .get('/api/users/me')
+        .set('Authorization', `Bearer ${loginToken}`)
+        .expect(200);
+
+      expect(meResponse.body).toHaveProperty('id');
+      expect(meResponse.body.username).toBe('meuser');
+      expect(meResponse.body.email).toBe('me@example.com');
+      expect(meResponse.body.firstName).toBe('Me');
+      expect(meResponse.body.lastName).toBe('User');
+      expect(meResponse.body).not.toHaveProperty('password');
+    });
+
     it('should not allow login after failed registration attempt and then successful registration', async () => {
       // 1. Try to register with invalid data
       await request(app.getHttpServer())
