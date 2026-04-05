@@ -15,6 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { StateService } from './state.service';
 import { WsJwtGuard } from './guards/ws-jwt.guard';
 import { Position } from './dto/position';
+import { AvatarAppearance } from './dto/avatar-appearance';
 import { SessionsService } from '../sessions/sessions.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 
@@ -190,6 +191,24 @@ export class RealtimeGateway
     if (shouldUpdate) {
       const state = this.stateService.getUserState(client.id);
       client.to(state.currentUserRoom).emit('user_moved', state.asPayload());
+    }
+  }
+
+  @UseGuards(WsJwtGuard)
+  @SubscribeMessage('update_avatar')
+  handleUpdateAvatar(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() appearance: AvatarAppearance,
+  ): void {
+    try {
+      const state = this.stateService.getUserState(client.id);
+      state.setAvatar(appearance);
+      client.to(state.currentUserRoom).emit('user_avatar_updated', {
+        userId: state.asPayload().userId,
+        avatar: appearance,
+      });
+    } catch {
+      // state not found — ignore
     }
   }
 

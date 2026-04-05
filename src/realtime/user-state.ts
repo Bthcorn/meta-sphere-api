@@ -1,4 +1,5 @@
-import { Position, AvatarAppearance } from './dto/position';
+import { Position } from './dto/position';
+import { AvatarAppearance } from './dto/avatar-appearance';
 
 export type UserID = string;
 
@@ -7,13 +8,14 @@ export interface UserStatePayload {
   username: string;
   roomId: string;
   position: Position;
+  avatar: AvatarAppearance;
 }
 
 // allow up to 20 updates per second
 const UPDATE_INTERVAL_MS = 50;
 
 export class UserState {
-  private position: Omit<Position, 'avatar'> = { x: 0, y: 0, z: 0, rotationY: 0 };
+  private position: Position = { x: 0, y: 0, z: 0, rotationY: 0 };
   private avatar: AvatarAppearance = {};
   private userId: UserID;
   private username: string;
@@ -35,12 +37,20 @@ export class UserState {
     this.roomId = roomId;
   }
 
+  setAvatar(appearance: AvatarAppearance): void {
+    if (appearance.skinColor    !== undefined) this.avatar.skinColor    = appearance.skinColor;
+    if (appearance.shirtColorId !== undefined) this.avatar.shirtColorId = appearance.shirtColorId;
+    if (appearance.glassesId    !== undefined) this.avatar.glassesId    = appearance.glassesId;
+    if (appearance.hatId        !== undefined) this.avatar.hatId        = appearance.hatId;
+  }
+
   asPayload(): UserStatePayload {
     return {
       userId: this.userId,
       username: this.username,
       roomId: this.roomId,
-      position: { ...this.position, avatar: { ...this.avatar } },
+      position: { ...this.position },
+      avatar: { ...this.avatar },
     };
   }
 
@@ -53,16 +63,7 @@ export class UserState {
       this.latestUpdate = now;
     }
 
-    const { avatar, ...movement } = position;
-    this.position = movement;
-
-    // Merge incoming avatar fields — only overwrite what was actually sent.
-    if (avatar) {
-      if (avatar.skinColor    !== undefined) this.avatar.skinColor    = avatar.skinColor;
-      if (avatar.shirtColorId !== undefined) this.avatar.shirtColorId = avatar.shirtColorId;
-      if (avatar.glassesId    !== undefined) this.avatar.glassesId    = avatar.glassesId;
-      if (avatar.hatId        !== undefined) this.avatar.hatId        = avatar.hatId;
-    }
+    this.position = position;
 
     return shouldUpdate;
   }
