@@ -108,7 +108,9 @@
       "!src/**/*.entity.ts",
       "!src/**/*.interface.ts",
       "!src/**/*.decorator.ts",
-      "!src/generated/**"
+      "!src/generated/**",
+      "!src/**/*.strategy.ts",
+      "!src/**/*.guard.ts"
     ],
     "coverageDirectory": "./coverage",
     "testEnvironment": "node",
